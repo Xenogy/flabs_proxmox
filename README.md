@@ -228,6 +228,7 @@ After changing the network adapter, verify that the VM can still connect to the 
 After adding the GPU, shut down the VM completely before starting it again.
 
 ### 7. (Optional) Optimize CPU Affinity for VMs
+This is sort of experimental, but has improved performance at higher utilization.
 
 The included CPU affinity script helps optimize VM performance by:
 - Balancing CPU pinning and NUMA node assignment
@@ -236,7 +237,7 @@ The included CPU affinity script helps optimize VM performance by:
 - Disabling memory ballooning
 - Setting the number of VirtIO queues to match vCPU count
 
-> **Note**: While it's possible to run without hugepages, they are strongly recommended for optimal performance.
+> **Note**: While it's possible to run without hugepages, they are recommended for optimal performance.
 
 #### 7.1 Using the CPU Affinity Script
 
