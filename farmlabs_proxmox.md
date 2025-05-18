@@ -35,6 +35,8 @@ Restart host.
 
 
 ### 2. Setup vGPU
+Follow the vGPU setup guide linked in the prerequisites section.
+
 #### 2.1 Configure vGPU Profile
 Create or edit the configuration file at `/etc/vgpu_unlock/profile_override.toml`:
 
@@ -59,30 +61,30 @@ Follow the license server setup guide linked in the prerequisites section.
 Follow the steps shown in the images below:
 
 #### 3.1 General Tab Configuration
-![VM Setup - General Tab](./flabs_proxmox/imgs/vm_setup-1-general.png)
+![VM Setup - General Tab](./imgs/vm_setup-1-general.png)
 
 #### 3.2 OS Configuration
-![VM Setup - OS Tab](./flabs_proxmox/imgs/vm_setup-2-OS.png)
+![VM Setup - OS Tab](./imgs/vm_setup-2-OS.png)
 
 #### 3.3 System Configuration
-![VM Setup - System Tab](./flabs_proxmox/imgs/vm_setup-3-System.png)
+![VM Setup - System Tab](./imgs/vm_setup-3-System.png)
 
 #### 3.4 Disk Configuration
-![VM Setup - Disks Tab](./flabs_proxmox/imgs/vm_setup-4-Disks.png)
+![VM Setup - Disks Tab](./imgs/vm_setup-4-Disks.png)
 
 #### 3.5 CPU Configuration
-![VM Setup - CPU Tab](./flabs_proxmox/imgs/vm_setup-5-CPU.png)
+![VM Setup - CPU Tab](./imgs/vm_setup-5-CPU.png)
 
 **Disclaimer:** cpu configuration varies a lot between systems. If using the cpu affinity bash script provided in the guide, you can skip this step.
 
 #### 3.6 Memory Configuration
-![VM Setup - Memory Tab](./flabs_proxmox/imgs/vm_setup-6-Memory.png)
+![VM Setup - Memory Tab](./imgs/vm_setup-6-Memory.png)
 
 #### 3.7 Network Configuration
-![VM Setup - Network Tab](./flabs_proxmox/imgs/vm_setup-7-Network.png)
+![VM Setup - Network Tab](./imgs/vm_setup-7-Network.png)
 
 #### 3.8 Confirmation
-![VM Setup - Confirm Tab](./flabs_proxmox/imgs/vm_setup-8-Confirm.png)
+![VM Setup - Confirm Tab](./imgs/vm_setup-8-Confirm.png)
 
 #### 3.9 Start VM
 From here you can follow the Farmlabs documentation until the disk selection in the Windows setup.
@@ -91,13 +93,13 @@ From here you can follow the Farmlabs documentation until the disk selection in 
 Follow the steps shown in the images below:
 
 #### 4.1 Driver Installation
-![Windows Setup - VirtIO Driver Installation](./flabs_proxmox/imgs/windows_setup-1-Driver.png)
+![Windows Setup - VirtIO Driver Installation](./imgs/windows_setup-1-Driver.png)
 
 #### 4.2 Confirmation
-![Windows Setup - Confirmation](./flabs_proxmox/imgs/windows_setup-2-OK.png)
+![Windows Setup - Confirmation](./imgs/windows_setup-2-OK.png)
 
 #### 4.3 Driver Selection
-![Windows Setup - Driver Selection](./flabs_proxmox/imgs/windows_setup-3-Select.png)
+![Windows Setup - Driver Selection](./imgs/windows_setup-3-Select.png)
 
 Now the disk should show up and be selectable, and you can continue following the Farmlabs documentation until completion.
 
@@ -176,20 +178,20 @@ Log into parsec or install your preferred remote management software, after the 
 
 #### 6.4 (Proxmox) Update VM network adapter
 Go to the VM's hardware tab and select the network adapter.
-![VirtIO Network Adapter](./flabs_proxmox/imgs/vm_update-1-hardware.png)
+![VirtIO Network Adapter](./imgs/vm_update-1-hardware.png)
 
 Change the adapter model to VirtIO.
-![VirtIO Network Adapter](./flabs_proxmox/imgs/vm_update-2-Adapter.png)
+![VirtIO Network Adapter](./imgs/vm_update-2-Adapter.png)
 
 Check that the VM can connect to the internet afterwards.
 
 #### 6.5 (Proxmox) Pass vGPU to VM
 
-![VM Hardware Tab](./flabs_proxmox/imgs/pass_gpu-1-hardware.png)
+![VM Hardware Tab](./imgs/pass_gpu-1-hardware.png)
 Open the VM's hardware tab and select the GPU you want to pass through.
-![VM Hardware Tab](./flabs_proxmox/imgs/pass_gpu-2-device.png)
+![VM Hardware Tab](./imgs/pass_gpu-2-device.png)
 Select the GPU you want to pass through.
-![VM Hardware Tab](./flabs_proxmox/imgs/pass_gpu-3-finish.png)
+![VM Hardware Tab](./imgs/pass_gpu-3-finish.png)
 Enable:
     - PCI Express
     - Primary GPU
