@@ -246,12 +246,7 @@ To view available options and usage instructions:
 bash affinity.sh -h
 ```
 
-#### 7.2 Example Usage
-
-To apply optimizations to a specific VM (replace VM_ID with your VM's ID):
-```bash
-bash affinity.sh -v VM_ID
-```
+The script is applied once, if you change your amount of running vms you must reapply with the new config.
 
 ## Troubleshooting
 
