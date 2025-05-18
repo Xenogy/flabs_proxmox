@@ -19,7 +19,7 @@ This guide provides instructions for setting up Proxmox with vGPU support for Fa
 
 ### Proxmox Resources
 - **Installation Guide**: [How to Install Proxmox](https://phoenixnap.com/kb/install-proxmox)
-  > **Note**: If using a single drive, limit boot partition size on step 6
+  > **Note**: If using a single drive, limit boot partition size on step 6 to make space for VM storage.
 - **Proxmox ISO**: [Download Proxmox VE](https://www.proxmox.com/en/products/proxmox-virtual-environment/get-started)
 
 ## Installation Steps
