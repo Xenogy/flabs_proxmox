@@ -39,7 +39,7 @@ This step improves VM performance by reserving memory pages.
    ```
    default_hugepagesz=2M hugepagesz=1G hugepages=N
    ```
-   > **Note**: Replace `N` with the number of 1GB hugepages you want to reserve for VMs. This should not exceed 80% of your system memory.
+   > **Note**: Replace `N` with the number of 1GB hugepages you want to reserve for VMs. This should probably not exceed ~80% of your system memory.
 
 3. Update GRUB and restart:
    ```bash
