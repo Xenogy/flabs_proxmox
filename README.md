@@ -1,4 +1,4 @@
-# Proxmox for FarmLabs: Beginner's Guide
+# Proxmox for FarmLabs
 
 **Last Updated:** 20-05-2025
 
