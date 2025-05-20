@@ -637,8 +637,7 @@ Here are solutions to common issues you might encounter:
 **Solution:**
 1. Try enabling hugepages as described in Section 1.3
 2. Apply the CPU affinity script from Section 7
-3. Ensure the VM has adequate RAM and CPU resources
-4. Update to the latest NVIDIA drivers
+3. Ensure the VM has adequate RAM and CPU resources (varies a lot between hardware)
 
 ## Glossary
 
