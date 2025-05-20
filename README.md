@@ -71,13 +71,13 @@ flowchart TD
     E -->|GPU validation| F[Configure VM for vGPU]
     F -->|Final optimization| G[CPU Affinity Setup]
 
-    style A fill:#d4f1f9,stroke:#0077b6
-    style B fill:#d4f1f9,stroke:#0077b6
-    style C fill:#d4f1f9,stroke:#0077b6
-    style D fill:#d4f1f9,stroke:#0077b6
-    style E fill:#d4f1f9,stroke:#0077b6
-    style F fill:#d4f1f9,stroke:#0077b6
-    style G fill:#e0e0e0,stroke:#666666,stroke-dasharray: 5 5
+    style A fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
+    style B fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
+    style C fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
+    style D fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
+    style E fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
+    style F fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
+    style G fill:#777777,stroke:#000000,color:#ffffff,font-weight:bold,stroke-dasharray: 5 5
 ```
 
 The flowchart above shows the complete setup process. Each step builds on the previous one:
@@ -102,13 +102,13 @@ Proxmox VE (Virtual Environment) is the hypervisor we'll use to create and manag
 **Steps:**
 
 1. Download the Proxmox VE ISO from the link above
-2. Create a bootable USB drive using tools like Rufus (Windows) or dd (Linux)
+2. Create a bootable USB drive using Etcher (cross-platform) or dd (Linux)
 
-   For Windows:
-   - Download [Rufus](https://rufus.ie/)
+   For Windows, macOS, or Linux:
+   - Download [Etcher](https://www.balena.io/etcher/)
    - Insert your USB drive
-   - Open Rufus, select your USB drive and the Proxmox ISO
-   - Click Start
+   - Open Etcher, select the Proxmox ISO and your USB drive
+   - Click "Flash!"
 
    For Linux:
    ```bash
