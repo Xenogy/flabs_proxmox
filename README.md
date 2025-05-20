@@ -69,7 +69,7 @@ flowchart TD
     C --> D[Install VirtIO network driver]
     D --> E[Setup License Server]
     E --> F[Configure VM for vGPU]
-    F -->|optional|  G[CPU Affinity Setup]
+    F -->|optional| G[CPU Affinity Setup]
 
     style A fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
     style B fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
