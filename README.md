@@ -35,7 +35,7 @@
 - [7. Optimizing CPU Affinity (Optional)](#7-optimizing-cpu-affinity-optional)
   - [7.1 Using the CPU Affinity Script](#71-using-the-cpu-affinity-script)
 - [Troubleshooting](#troubleshooting)
-- [Glossary](#glossary)
+- [Glossary / Fancy words](#glossary)
 - [Additional Resources](#additional-resources)
 
 ## Introduction
