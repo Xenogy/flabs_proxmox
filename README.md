@@ -355,7 +355,7 @@ During Windows installation, you'll need to load the VirtIO disk driver to make 
 
    ![Windows Setup - Confirmation](./imgs/windows_setup-2-OK.png)
 
-4. Select the driver with "w11" in its path (.../w11/...):
+4. Select the driver with "w11" in its path (.../w11/...) and click next:
 
    ![Windows Setup - Driver Selection](./imgs/windows_setup-3-Select.png)
 
