@@ -41,7 +41,7 @@
 ## Introduction
 
 ### Who is this guide for?
-This guide is designed for FarmLabs users who want to set up Proxmox with vGPU support. It's written with beginners in mind but includes all the technical details needed for a complete setup.
+This guide is designed for FarmLabs users who want to set up Proxmox with vGPU support. vGPU (Virtual GPU) technology allows multiple virtual machines to share a single physical GPU, enabling efficient multi vm setups using a single gpu. This guide is written with beginners in mind but includes all the technical details needed for a complete setup.
 
 ### Hardware Requirements
 FOR PROXMOX ITSELF, CHECK FARMLABS DOCS FOR BOTS MINIMUM SPECS
@@ -65,11 +65,11 @@ By following this guide, you'll learn how to:
 ```mermaid
 flowchart TD
     A[Install Proxmox] --> B[Setup vGPU Support]
-    B -->|split one gpu to many vms| C[Create Windows VM]
+    B --> C[Create Windows VM]
     C --> D[Install VirtIO network driver]
     D --> E[Setup License Server]
     E --> F[Configure VM for vGPU]
-    F -->|Final optimization| G[CPU Affinity Setup]
+    F -->  G[CPU Affinity Setup]
 
     style A fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
     style B fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
@@ -85,7 +85,7 @@ The flowchart above shows the complete setup process. Each step builds on the pr
 2. **Setup vGPU Support** - Enables GPU sharing between multiple VMs
 3. **Create Windows VM** - Builds the virtual machine that will use the GPU
 4. **Install VirtIO Drivers** - Improves virtual hardware performance
-5. **Setup License Server** - Required for NVIDIA vGPU validation
+5. **Setup License Server** - Required for NVIDIA vGPU validation (GPU will lock after 20 minutes of usage without it)
 6. **Configure VM for vGPU** - Connects the VM to the GPU and license server
 7. **CPU Affinity Setup** - Optional performance optimization
 
