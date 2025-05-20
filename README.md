@@ -143,7 +143,7 @@ After rebooting, you should be able to access the Proxmox web interface by enter
 
 ### 1.3 Configure Hugepages (Optional)
 
-Hugepages improve VM performance by reserving memory pages. This step is optional but recommended.
+Hugepages improve VM performance by reserving memory. This step is optional but recommended.
 
 **Steps:**
 
