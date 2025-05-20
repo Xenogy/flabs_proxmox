@@ -122,7 +122,7 @@ Proxmox VE (Virtual Environment) is the hypervisor we'll use to create and manag
 
 Follow these steps to install Proxmox on your server:
 
-1. Select "Install Proxmox VE" from the boot menu
+1. Select "Install Proxmox VE (graphical)" from the boot menu
 2. Accept the EULA by clicking "I agree"
 3. Select the target hard disk for installation
 
@@ -575,7 +575,7 @@ This optional section helps optimize VM performance by configuring CPU pinning a
 
 ### 7.1 Using the CPU Affinity Script
 
-The included CPU affinity script helps optimize VM performance by:
+The included [cpu_affinity.sh](./cpu_affinity.sh) script helps optimize VM performance by:
 - Balancing CPU pinning and NUMA node assignment
 - Reserving the first physical core of each socket for the host
 - Configuring 1GB hugepages
@@ -586,17 +586,19 @@ The included CPU affinity script helps optimize VM performance by:
 
 1. On your Proxmox host, view the script's help information:
    ```bash
-   bash affinity.sh -h
+   bash cpu_affinity.sh -h
    ```
 
 2. Run the script with your desired configuration:
    ```bash
-   bash affinity.sh -v VM_ID -c NUMBER_OF_CORES
+   bash cpu_affinity.sh -r VM_ID -c NUMBER_OF_CORES
    ```
 
    Replace:
-   - `VM_ID` with your VM's ID number
+   - `VM_ID` with your VM's ID number (can be a range like '100-105' or a list like '100,102,105')
    - `NUMBER_OF_CORES` with the number of cores you want to assign
+
+   > 💡 **Tip:** You can use the `-n` flag for a dry run to see what changes would be made without actually applying them.
 
    > ⚠️ **Important:** The script is applied once. If you change your number of running VMs, you must reapply with the new configuration.
 
