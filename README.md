@@ -1,4 +1,4 @@
-# Proxmox for FarmLabs: Beginner's Guide
+# Proxmox for FarmLabs
 
 **Last Updated:** 20-05-2025
 
@@ -41,7 +41,7 @@
 ## Introduction
 
 ### Who is this guide for?
-This guide is designed for FarmLabs users who want to set up Proxmox with vGPU support. vGPU (Virtual GPU) technology allows multiple virtual machines to share a single physical GPU, enabling efficient multi vm setups using a single gpu. This guide is written with beginners in mind but includes all the technical details needed for a complete setup.
+This guide is designed for FarmLabs users who want to set up Proxmox with vGPU support. vGPU (Virtual GPU) technology allows multiple virtual machines to share a single physical GPU. This guide is written with beginners in mind but includes all the technical details needed for a complete setup.
 
 ### Hardware Requirements
 FOR PROXMOX ITSELF, CHECK FARMLABS DOCS FOR BOTS MINIMUM SPECS
@@ -85,7 +85,7 @@ The flowchart above shows the complete setup process. Each step builds on the pr
 2. **Setup vGPU Support** - Enables GPU sharing between multiple VMs
 3. **Create Windows VM** - Builds the virtual machine that will use the GPU
 4. **Install VirtIO Drivers** - Improves virtual hardware performance
-5. **Setup License Server** - Required for NVIDIA vGPU validation (GPU will lock after 20 minutes of usage without it)
+5. **Setup License Server** - Required for NVIDIA vGPU, without it your VMs performance will degrade heavily after 20 minutes of running.
 6. **Configure VM for vGPU** - Connects the VM to the GPU and license server
 7. **CPU Affinity Setup** - Optional performance optimization
 
@@ -126,19 +126,17 @@ Follow these steps to install Proxmox on your server:
 2. Accept the EULA by clicking "I agree"
 3. Select the target hard disk for installation
 
-   > ⚠️ **Warning:** This will erase all data on the selected disk!
+   > 📝 **Note:** If using a single drive, limit boot partition size (50GB minimum) in the options (small button to the right of disk selection) to make space for VM storage.
 
 4. Set your location and timezone
 5. Enter a password for the root user and provide an email address
 6. Configure the network settings:
-   - Enter a hostname (e.g., proxmox.farmlabs)
-   - Enter IP address, subnet mask, and gateway
-   - Enter DNS server (e.g., 8.8.8.8)
+   - Enter a hostname (e.g., bot1.farmlabs)
+   - Enter IP address (CIDR) and gateway
+   - Enter DNS server (usually the same address as your gateway)
 
 7. Review the settings and click "Install"
 8. After installation completes, remove the USB drive and reboot
-
-   > 📝 **Note:** If using a single drive, limit boot partition size on step 6 to make space for VM storage.
 
 **Verification:**
 After rebooting, you should be able to access the Proxmox web interface by entering `https://your-ip-address:8006` in a web browser. Log in with username `root` and the password you set during installation.
@@ -221,7 +219,7 @@ Now we'll create a custom profile configuration to optimize performance.
    [profile.nvidia-{profile id}]    # Replace {profile id} with your preferred base profile
    num_displays = 1
    vgpu_type = "NVS"                # Improves performance for Q profiles on some cards
-   frl_enabled = 0                  # Framerate lock (0 = disabled)
+   frl_enabled = 1                  # Framerate lock (0 = disabled), enabling can help prevent unneccesary resource usage
 
    display_width = 1920
    display_height = 1080
@@ -285,7 +283,7 @@ Follow these steps to create a new VM in Proxmox:
    - Check "Add EFI Disk"
    - Set Machine to "q35"
    - Check "Add TPM" and set Storage to your preferred storage
-   - Set SCSI Controller to "VirtIO SCSI"
+   - Set SCSI Controller to "VirtIO SCSI single"
    - Click Next
 
    ![VM Setup - System Tab](./imgs/vm_setup-3-System.png)
@@ -391,7 +389,7 @@ After restarting, your VM should have internet access. Open a web browser and tr
 
 In this section, you'll set up a license server that allows your virtual machines to use NVIDIA vGPU features. We'll use Docker to make this process simpler.
 
-> 📝 **What is a license server?** The license server validates your virtual GPU usage. Without it, your VMs won't be able to use the GPU properly.
+> 📝 **What is a license server?** The license server validates your virtual GPU usage. Without it, your VMs performance will be heavily degraded after 20 minutes of running.
 
 ### 5.1 Installing Docker
 
@@ -493,7 +491,7 @@ In this section, we'll configure the Windows VM to use the vGPU and connect to t
 **Steps:**
 
 1. Locate the NVIDIA GRID client driver (it's an .exe file bundled with the vGPU host driver)
-2. Transfer the driver to your Windows VM
+2. Transfer the driver to your Windows VM (tools like WinSCP work well for this)
 3. Run the installer and follow the on-screen instructions
 4. Restart the VM when prompted
 5. After installation, open PowerShell as Administrator and run:
@@ -548,16 +546,17 @@ Finally, we'll add the vGPU to the VM:
 3. Click on "Hardware"
 4. Click "Add" and select "PCI Device"
 5. Select your GPU from the list
-6. Check "PCI Express" and "Primary GPU" options
-7. Click "Add"
+6. Select your chosen vGPU profile under "MDev Type"
+7. Check "PCI Express" and "Primary GPU" options
+8. Click "Add"
 
    ![VM Hardware Tab](./imgs/pass_gpu-1-hardware.png)
    ![Select GPU](./imgs/pass_gpu-2-device.png)
    ![Configure GPU](./imgs/pass_gpu-3-finish.png)
 
-8. Start the VM
-9. Connect using your remote access software
-10. Verify the GPU is working by checking Device Manager or running:
+9. Start the VM
+10. Connect using your remote access software
+11. Verify the GPU is working by checking Device Manager or running:
     ```
     nvidia-smi
     ```
