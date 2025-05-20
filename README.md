@@ -126,19 +126,17 @@ Follow these steps to install Proxmox on your server:
 2. Accept the EULA by clicking "I agree"
 3. Select the target hard disk for installation
 
-   > ⚠️ **Warning:** This will erase all data on the selected disk!
+   > 📝 **Note:** If using a single drive, limit boot partition size on step 3 to make space for VM storage.
 
 4. Set your location and timezone
 5. Enter a password for the root user and provide an email address
 6. Configure the network settings:
-   - Enter a hostname (e.g., proxmox.farmlabs)
-   - Enter IP address, subnet mask, and gateway
-   - Enter DNS server (e.g., 8.8.8.8)
+   - Enter a hostname (e.g., bot1.farmlabs)
+   - Enter IP address (CIDR) and gateway
+   - Enter DNS server (usually the same address as your gateway)
 
 7. Review the settings and click "Install"
 8. After installation completes, remove the USB drive and reboot
-
-   > 📝 **Note:** If using a single drive, limit boot partition size on step 6 to make space for VM storage.
 
 **Verification:**
 After rebooting, you should be able to access the Proxmox web interface by entering `https://your-ip-address:8006` in a web browser. Log in with username `root` and the password you set during installation.
