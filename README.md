@@ -41,7 +41,7 @@
 ## Introduction
 
 ### Who is this guide for?
-This guide is designed for FarmLabs users who want to set up Proxmox with vGPU support. vGPU (Virtual GPU) technology allows multiple virtual machines to share a single physical GPU, enabling efficient multi vm setups using a single gpu. This guide is written with beginners in mind but includes all the technical details needed for a complete setup.
+This guide is designed for FarmLabs users who want to set up Proxmox with vGPU support. vGPU (Virtual GPU) technology allows multiple virtual machines to share a single physical GPU. This guide is written with beginners in mind but includes all the technical details needed for a complete setup.
 
 ### Hardware Requirements
 FOR PROXMOX ITSELF, CHECK FARMLABS DOCS FOR BOTS MINIMUM SPECS
