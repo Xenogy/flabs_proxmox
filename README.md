@@ -1,6 +1,6 @@
 # Proxmox for FarmLabs: Beginner's Guide
 
-**Last Updated:** [Current Date]
+**Last Updated:** 20-05-2025
 
 > ⚠️ **IMPORTANT:** This guide will NOT work for NVIDIA 30/40/50 series cards or most AMD cards.
 
