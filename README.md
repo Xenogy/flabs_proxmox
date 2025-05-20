@@ -221,7 +221,7 @@ Now we'll create a custom profile configuration to optimize performance.
    [profile.nvidia-{profile id}]    # Replace {profile id} with your preferred base profile
    num_displays = 1
    vgpu_type = "NVS"                # Improves performance for Q profiles on some cards
-   frl_enabled = 0                  # Framerate lock (0 = disabled)
+   frl_enabled = 1                  # Framerate lock (0 = disabled), enabling can help prevent unneccesary resource usage
 
    display_width = 1920
    display_height = 1080
@@ -285,7 +285,7 @@ Follow these steps to create a new VM in Proxmox:
    - Check "Add EFI Disk"
    - Set Machine to "q35"
    - Check "Add TPM" and set Storage to your preferred storage
-   - Set SCSI Controller to "VirtIO SCSI"
+   - Set SCSI Controller to "VirtIO SCSI single"
    - Click Next
 
    ![VM Setup - System Tab](./imgs/vm_setup-3-System.png)
@@ -493,7 +493,7 @@ In this section, we'll configure the Windows VM to use the vGPU and connect to t
 **Steps:**
 
 1. Locate the NVIDIA GRID client driver (it's an .exe file bundled with the vGPU host driver)
-2. Transfer the driver to your Windows VM
+2. Transfer the driver to your Windows VM (tools like WinSCP work well for this)
 3. Run the installer and follow the on-screen instructions
 4. Restart the VM when prompted
 5. After installation, open PowerShell as Administrator and run:
