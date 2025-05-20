@@ -85,7 +85,7 @@ The flowchart above shows the complete setup process. Each step builds on the pr
 2. **Setup vGPU Support** - Enables GPU sharing between multiple VMs
 3. **Create Windows VM** - Builds the virtual machine that will use the GPU
 4. **Install VirtIO Drivers** - Improves virtual hardware performance
-5. **Setup License Server** - Required for NVIDIA vGPU validation (GPU will lock after 20 minutes of usage without it)
+5. **Setup License Server** - Required for NVIDIA vGPU, without it your VMs performance will degrade heavily after 20 minutes of running.
 6. **Configure VM for vGPU** - Connects the VM to the GPU and license server
 7. **CPU Affinity Setup** - Optional performance optimization
 
@@ -126,7 +126,7 @@ Follow these steps to install Proxmox on your server:
 2. Accept the EULA by clicking "I agree"
 3. Select the target hard disk for installation
 
-   > 📝 **Note:** If using a single drive, limit boot partition size on step 3 to make space for VM storage.
+   > 📝 **Note:** If using a single drive, limit boot partition size (50GB minimum) in the options (small button to the right of disk selection) to make space for VM storage.
 
 4. Set your location and timezone
 5. Enter a password for the root user and provide an email address
