@@ -2,7 +2,7 @@
 
 This guide provides instructions for setting up Proxmox with vGPU support for FarmLabs.
 
-(WILL NOT WORK FOR 30/40/50 SERIES NVIDIA CARDS OR 99% OF AMD CARDS)
+(WILL NOT WORK FOR 30/40/50 SERIES NVIDIA CARDS OR 99.9% OF AMD CARDS)
 
 ## Prerequisites
 
