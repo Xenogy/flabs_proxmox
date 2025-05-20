@@ -44,11 +44,12 @@
 This guide is designed for FarmLabs users who want to set up Proxmox with vGPU support. It's written with beginners in mind but includes all the technical details needed for a complete setup.
 
 ### Hardware Requirements
-- **CPU:** Any modern CPU with virtualization support (Intel VT-x or AMD-V)
-- **RAM:** Minimum 16GB, recommended 32GB+
-- **Storage:** At least 100GB for Proxmox and VMs
+FOR PROXMOX ITSELF, CHECK FARMLABS DOCS FOR BOTS MINIMUM SPECS
+
+- **CPU:** Any modern CPU with virtualization support (Intel VT-x or AMD-V, most modern cpus support this but if unsure check manufacturer specs)
+- **RAM:** Minimum 16GB
+- **Storage:** At least 50GB for Proxmox OS + 80GB per VM (minimum, 100GB recommended)
 - **GPU:** NVIDIA GPU with vGPU support (NOT compatible with 30/40/50 series cards)
-- **Network:** Ethernet connection recommended
 
 ### What You'll Learn
 By following this guide, you'll learn how to:
@@ -59,9 +60,36 @@ By following this guide, you'll learn how to:
 - Set up a license server for vGPU
 - Optimize VM performance
 
-## 1. Installing Proxmox
+## Setup Process Overview
 
-**Estimated time: 1 hour**
+```mermaid
+flowchart TD
+    A[Install Proxmox] -->|Base hypervisor| B[Setup vGPU Support]
+    B -->|GPU sharing| C[Create Windows VM]
+    C -->|Virtual machine| D[Install VirtIO Drivers]
+    D -->|Hardware performance| E[Setup License Server]
+    E -->|GPU validation| F[Configure VM for vGPU]
+    F -->|Final optimization| G[CPU Affinity Setup]
+
+    style A fill:#d4f1f9,stroke:#0077b6
+    style B fill:#d4f1f9,stroke:#0077b6
+    style C fill:#d4f1f9,stroke:#0077b6
+    style D fill:#d4f1f9,stroke:#0077b6
+    style E fill:#d4f1f9,stroke:#0077b6
+    style F fill:#d4f1f9,stroke:#0077b6
+    style G fill:#e0e0e0,stroke:#666666,stroke-dasharray: 5 5
+```
+
+The flowchart above shows the complete setup process. Each step builds on the previous one:
+1. **Install Proxmox** - Creates the base virtualization platform
+2. **Setup vGPU Support** - Enables GPU sharing between multiple VMs
+3. **Create Windows VM** - Builds the virtual machine that will use the GPU
+4. **Install VirtIO Drivers** - Improves virtual hardware performance
+5. **Setup License Server** - Required for NVIDIA vGPU validation
+6. **Configure VM for vGPU** - Connects the VM to the GPU and license server
+7. **CPU Affinity Setup** - Optional performance optimization
+
+## 1. Installing Proxmox
 
 Proxmox VE (Virtual Environment) is the hypervisor we'll use to create and manage virtual machines.
 
@@ -158,8 +186,6 @@ You should see output showing the configured hugepages.
 
 ## 2. Setting Up vGPU Support
 
-**Estimated time: 2 hours**
-
 In this section, we'll configure your Proxmox server to support NVIDIA vGPU, which allows multiple VMs to share a single physical GPU.
 
 ### 2.1 Understanding vGPU Profiles
@@ -205,7 +231,7 @@ Now we'll create a custom profile configuration to optimize performance.
    framebuffer_reservation = 0xC000000  # 2GB vram
    ```
 
-   > 💡 **Tip:** The profile ID should be replaced with one you found in the previous step, such as "Q1-1A"
+   > 💡 **Tip:** The profile ID should be replaced with one you found in the previous step, for example "[profile.nvidia-50]"
 
 3. Save the file and restart the vGPU services:
    ```bash
@@ -223,8 +249,6 @@ You should see "active (running)" in the output.
 **Next Step:** [3. Creating a Windows VM](#3-creating-a-windows-vm)
 
 ## 3. Creating a Windows VM
-
-**Estimated time: 1 hour**
 
 In this section, we'll create a Windows VM that will use our vGPU.
 
@@ -268,8 +292,8 @@ Follow these steps to create a new VM in Proxmox:
 
 4. **Disk Settings**
    - Set Bus/Device to "SCSI"
-   - Set Disk size (recommended: at least 64 GB)
-   - Set Storage to your preferred storage
+   - Set Disk size (recommended: 100 GB, minimum 80 GB)
+   - Set Storage to your preferred storage disk
    - Click Next
 
    ![VM Setup - Disks Tab](./imgs/vm_setup-4-Disks.png)
@@ -318,8 +342,6 @@ After creating the VM, you'll need to add the VirtIO ISO to install drivers duri
 
 ## 4. Installing VirtIO Drivers
 
-**Estimated time: 30 minutes**
-
 VirtIO drivers improve performance for virtual hardware. We'll install these during the Windows setup process.
 
 ### 4.1 Disk Driver Installation
@@ -366,8 +388,6 @@ After restarting, your VM should have internet access. Open a web browser and tr
 **Next Step:** [5. Setting Up the License Server](#5-setting-up-the-license-server)
 
 ## 5. Setting Up the License Server
-
-**Estimated time: 30 minutes**
 
 In this section, you'll set up a license server that allows your virtual machines to use NVIDIA vGPU features. We'll use Docker to make this process simpler.
 
@@ -463,8 +483,6 @@ You can check if the license server is accessible by opening `https://your-serve
 
 ## 6. Configuring Windows VM for vGPU
 
-**Estimated time: 1 hour**
-
 In this section, we'll configure the Windows VM to use the vGPU and connect to the license server.
 
 ### 6.1 Installing NVIDIA GRID Client Driver
@@ -550,8 +568,6 @@ If everything is working correctly, you should see the NVIDIA GPU listed in Devi
 **Next Step:** [7. Optimizing CPU Affinity (Optional)](#7-optimizing-cpu-affinity-optional)
 
 ## 7. Optimizing CPU Affinity (Optional)
-
-**Estimated time: 30 minutes**
 
 This optional section helps optimize VM performance by configuring CPU pinning and NUMA node assignment.
 
