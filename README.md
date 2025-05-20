@@ -391,7 +391,7 @@ After restarting, your VM should have internet access. Open a web browser and tr
 
 In this section, you'll set up a license server that allows your virtual machines to use NVIDIA vGPU features. We'll use Docker to make this process simpler.
 
-> 📝 **What is a license server?** The license server validates your virtual GPU usage. Without it, your VMs won't be able to use the GPU properly.
+> 📝 **What is a license server?** The license server validates your virtual GPU usage. Without it, your VMs performance will be heavily degraded after 20 minutes of running.
 
 ### 5.1 Installing Docker
 
@@ -548,16 +548,17 @@ Finally, we'll add the vGPU to the VM:
 3. Click on "Hardware"
 4. Click "Add" and select "PCI Device"
 5. Select your GPU from the list
-6. Check "PCI Express" and "Primary GPU" options
-7. Click "Add"
+6. Select your chosen vGPU profile under "MDev Type"
+7. Check "PCI Express" and "Primary GPU" options
+8. Click "Add"
 
    ![VM Hardware Tab](./imgs/pass_gpu-1-hardware.png)
    ![Select GPU](./imgs/pass_gpu-2-device.png)
    ![Configure GPU](./imgs/pass_gpu-3-finish.png)
 
-8. Start the VM
-9. Connect using your remote access software
-10. Verify the GPU is working by checking Device Manager or running:
+9. Start the VM
+10. Connect using your remote access software
+11. Verify the GPU is working by checking Device Manager or running:
     ```
     nvidia-smi
     ```
