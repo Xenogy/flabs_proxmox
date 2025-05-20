@@ -2,7 +2,7 @@
 
 **Last Updated:** 20-05-2025
 
-> ⚠️ **IMPORTANT:** This guide will NOT work for NVIDIA 30/40/50 series cards or most AMD cards.
+> ⚠️ **IMPORTANT:** This guide will NOT work for NVIDIA 30/40/50 series cards or AMD cards.
 
 ## Table of Contents
 - [Introduction](#introduction)
