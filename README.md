@@ -64,11 +64,11 @@ By following this guide, you'll learn how to:
 
 ```mermaid
 flowchart TD
-    A[Install Proxmox] -->|Base hypervisor| B[Setup vGPU Support]
-    B -->|GPU sharing| C[Create Windows VM]
-    C -->|Virtual machine| D[Install VirtIO Drivers]
-    D -->|Hardware performance| E[Setup License Server]
-    E -->|GPU validation| F[Configure VM for vGPU]
+    A[Install Proxmox] --> B[Setup vGPU Support]
+    B -->|split one gpu to many vms| C[Create Windows VM]
+    C --> D[Install VirtIO network driver]
+    D --> E[Setup License Server]
+    E --> F[Configure VM for vGPU]
     F -->|Final optimization| G[CPU Affinity Setup]
 
     style A fill:#005792,stroke:#000000,color:#ffffff,font-weight:bold
