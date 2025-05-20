@@ -159,7 +159,7 @@ Hugepages improve VM performance by reserving memory. This step is optional but 
 
 3. Find the line starting with `GRUB_CMDLINE_LINUX_DEFAULT` and add hugepages parameters:
    ```
-   GRUB_CMDLINE_LINUX_DEFAULT="quiet default_hugepagesz=2M hugepagesz=1G hugepages=N"
+   GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt pcie_aspm=off initcall_blacklist=sysfb_init default_hugepagesz=2M hugepagesz=1G hugepages=N"
    ```
 
    > 🔑 **Key Point:** Replace `N` with the number of 1GB hugepages you want to reserve.
