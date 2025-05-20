@@ -544,19 +544,22 @@ Finally, we'll add the vGPU to the VM:
 1. Shut down the VM completely
 2. In the Proxmox web interface, select your VM
 3. Click on "Hardware"
+  ![VM Hardware Tab](./imgs/pass_gpu-1-hardware.png)
 4. Click "Add" and select "PCI Device"
+  ![Select GPU](./imgs/pass_gpu-2-device.png)
 5. Select your GPU from the list
 6. Select your chosen vGPU profile under "MDev Type"
 7. Check "PCI Express" and "Primary GPU" options
+  ![Configure GPU](./imgs/pass_gpu-3-finish.png)
 8. Click "Add"
 
-   ![VM Hardware Tab](./imgs/pass_gpu-1-hardware.png)
-   ![Select GPU](./imgs/pass_gpu-2-device.png)
-   ![Configure GPU](./imgs/pass_gpu-3-finish.png)
 
-9. Start the VM
-10. Connect using your remote access software
-11. Verify the GPU is working by checking Device Manager or running:
+   
+
+
+10. Start the VM
+11. Connect using your remote access software
+12. Verify the GPU is working by checking Device Manager or running:
     ```
     nvidia-smi
     ```
