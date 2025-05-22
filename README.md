@@ -417,7 +417,7 @@ In this section, you'll set up a license server that allows your virtual machine
    ```bash
    wget https://git.collinwebdesigns.de/oscar.krause/fastapi-dls/-/raw/main/docker-compose.yml
    ```
-3. Setup SSL certificate
+3. Setup SSL certificate (might have to run as root user)
    ```bash
    WORKING_DIR=/opt/docker/fastapi-dls/cert
    mkdir -p $WORKING_DIR
