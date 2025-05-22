@@ -417,6 +417,15 @@ In this section, you'll set up a license server that allows your virtual machine
    ```bash
    wget https://git.collinwebdesigns.de/oscar.krause/fastapi-dls/-/raw/main/docker-compose.yml
    ```
+3. Setup SSL certificate
+   ```bash
+   WORKING_DIR=/opt/docker/fastapi-dls/cert
+   mkdir -p $WORKING_DIR
+   cd $WORKING_DIR
+   # create ssl certificate for integrated webserver (uvicorn) - because clients rely on ssl
+   openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout  $WORKING_DIR/webserver.key -out $WORKING_DIR/webserver.crt
+   ```
+   > ⚠️ **Important:** Make sure to set the correct country code, but the rest you can just skip through by pressing enter.
 
 ### 5.3 Configuring the License Server
 
