@@ -468,12 +468,12 @@ In this section, you'll set up a license server that allows your virtual machine
 
 1. Start the license server:
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 2. Verify the server is running:
    ```bash
-   docker-compose ps
+   docker compose ps
    ```
 
    You should see the `dls` service listed as "Up"
