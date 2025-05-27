@@ -237,7 +237,7 @@ If you have additional storage drives available, you can create dedicated partit
 
 5. **Set Partition Number**
 
-   - Press Enter to accept the default partition number (usually 1)
+   - Press Enter to accept the default partition number (usually 1, unless you're using the proxmox install disk for VM storage, in which case it can higher, but still accept the default)
 
    ![Set Partition Number](./imgs/vm_partition/05-fdisk_partition_number.png)
 
@@ -259,35 +259,34 @@ If you have additional storage drives available, you can create dedicated partit
 
    ![Write Changes](./imgs/vm_partition/08-fdisk_write_changes.png)
 
-9. **Format the Partition**
+9. **Create Volume Group in Proxmox**
 
-   After creating the partition, format it with a filesystem:
-   ```bash
-   # Replace /dev/sdX1 with your actual partition name
-   mkfs.ext4 /dev/sdX1
-   ```
+   Now add the new disk to Proxmox storage through the web interface:
 
-10. **Add to Proxmox Storage**
+   - In the Proxmox web interface, go to your node (server name) in the left sidebar
+   - Click on "Disks"
+   - Click on "LVM" tab
+   - Click "Create: Volume Group" button
 
-    In the Proxmox web interface:
-    - Go to Datacenter → Storage
-    - Click "Add" → "Directory"
-    - Set ID to a descriptive name (e.g., "vm-storage")
-    - Set Directory to `/mnt/vm-storage` (or your preferred mount point)
-    - Check "Disk image" and "VZDump backup file"
-    - Click "Add"
+   ![Create Volume Group Button](./imgs/vm_partition/09-proxmox_create_volume_group.png)
+
+   - In the popup window, select your new disk from the "Disk" dropdown
+   - Enter a name for the volume group (e.g., "vm-storage")
+   - Click "Create"
+
+   ![Create Volume Group Popup](./imgs/vm_partition/10-proxmox_create_volume_group_popup.png)
 
 **Verification:**
-Verify that your new partition is properly created and formatted:
+Verify that your new volume group was created successfully:
 ```bash
 # Check if the partition exists
 lsblk
 
-# Check filesystem information
-df -h
+# Check LVM volume groups
+vgs
 ```
 
-You should see your new partition listed in the output. If you added it to Proxmox storage, it should also appear in the Proxmox web interface under Datacenter → Storage.
+You should see your new partition listed in the `lsblk` output and your volume group in the `vgs` output. The volume group should also appear in the Proxmox web interface under Datacenter → Storage, and you can use it when creating VMs by selecting it as the storage location.
 
 **Next Step:** [2. Setting Up vGPU Support](#2-setting-up-vgpu-support)
 
