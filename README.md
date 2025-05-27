@@ -13,6 +13,7 @@
   - [1.1 Download and Create Installation Media](#11-download-and-create-installation-media)
   - [1.2 Install Proxmox VE](#12-install-proxmox-ve)
   - [1.3 Configure Hugepages (Optional)](#13-configure-hugepages-optional)
+  - [1.4 Create Disk Partition for VM Storage](#14-create-disk-partition-for-vm-storage)
 - [2. Setting Up vGPU Support](#2-setting-up-vgpu-support)
   - [2.1 Understanding vGPU Profiles](#21-understanding-vgpu-profiles)
   - [2.2 Configure vGPU Profile](#22-configure-vgpu-profile)
@@ -162,25 +163,20 @@ Hugepages improve VM performance by reserving memory. This step is optional but 
    > 🔑 **Key Point:** Replace `N` with the number of 1GB hugepages you want to reserve.
    > This should be calculated based on your system memory. For example, if you have 32GB RAM
    > and want to use 24GB for VMs, set N to 24.
-   
+
    FOR INTEL:
    ```
-   GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt pcie_aspm=off initcall_blacklist=sysfb_init default_hugepagesz=2M hugepagesz=1G hugepages=N"
+   GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt default_hugepagesz=2M hugepagesz=1G hugepages=N"
    ```
    FOR AMD:
    ```
-   GRUB_CMDLINE_LINUX_DEFAULT="quiet iommu=pt pcie_aspm=off initcall_blacklist=sysfb_init default_hugepagesz=2M hugepagesz=1G hugepages=N"
+   GRUB_CMDLINE_LINUX_DEFAULT="quiet iommu=pt default_hugepagesz=2M hugepagesz=1G hugepages=N"
    ```
 
-5. Update GRUB:
+5. Update GRUB and reboot:
    ```bash
    update-grub
-   ```
-
-6. Create partition for VMs:
-   
-   ```
-   
+   reboot
    ```
 
 **Verification:**
@@ -190,6 +186,108 @@ cat /proc/meminfo | grep Huge
 ```
 
 You should see output showing the configured hugepages.
+
+### 1.4 Create Disk Partition for VM Storage
+
+If you have additional storage drives available, you can create dedicated partitions for VM storage. This step is optional but recommended for better performance and organization.
+
+> 📝 **Why create separate partitions?** Separating VM storage from the Proxmox system partition improves performance, makes backup management easier, and prevents VMs from filling up the system disk.
+
+**Steps:**
+
+1. **Identify Available Disks**
+
+   First, list all available storage devices to see what disks you have:
+   ```bash
+   fdisk -l
+   ```
+
+   > 💡 **Understanding Disk Naming:** Disk names vary depending on the type of storage device you're using:
+
+   **For SSD/SATA drives:** You'll see names like `/dev/sda`, `/dev/sdb`, `/dev/sdc`, etc.
+
+   ![SSD Disk Listing](./imgs/vm_partition/01-fdisk_list_ssd.png)
+
+   **For NVMe drives:** You'll see names like `/dev/nvme0n1`, `/dev/nvme1n1`, etc.
+
+   ![NVMe Disk Listing](./imgs/vm_partition/02-fdisk_list_nvme.png)
+
+   > ⚠️ **Important:** Make sure to identify the correct disk for partitioning. Do NOT partition the disk where Proxmox is installed (usually the first disk in the list).
+
+2. **Create a New Partition**
+
+   Once you've identified the disk you want to use for VM storage, start the fdisk utility:
+   ```bash
+   # Replace /dev/sdX with your actual disk name (e.g., /dev/sdb for SSD or /dev/nvme1n1 for NVMe)
+   fdisk /dev/sdX
+   ```
+
+3. **Create a New Partition Table**
+
+   In the fdisk prompt, create a new partition:
+   - Type `n` to create a new partition
+
+   ![Create New Partition](./imgs/vm_partition/03-fdisk_new_partition.png)
+
+4. **Select Partition Type**
+
+   - Type `p` to create a primary partition
+
+   ![Select Primary Partition](./imgs/vm_partition/04-fdisk_new_partition_primary.png)
+
+5. **Set Partition Number**
+
+   - Press Enter to accept the default partition number (usually 1)
+
+   ![Set Partition Number](./imgs/vm_partition/05-fdisk_partition_number.png)
+
+6. **Set First Sector**
+
+   - Press Enter to accept the default first sector
+
+   ![Set First Sector](./imgs/vm_partition/06-fdisk_first_sector.png)
+
+7. **Set Last Sector**
+
+   - Press Enter to use the entire disk, or specify a size (e.g., `+500G` for 500GB)
+
+   ![Set Last Sector](./imgs/vm_partition/07-fdisk_last_sector.png)
+
+8. **Write Changes**
+
+   - Type `w` to write the changes to disk
+
+   ![Write Changes](./imgs/vm_partition/08-fdisk_write_changes.png)
+
+9. **Format the Partition**
+
+   After creating the partition, format it with a filesystem:
+   ```bash
+   # Replace /dev/sdX1 with your actual partition name
+   mkfs.ext4 /dev/sdX1
+   ```
+
+10. **Add to Proxmox Storage**
+
+    In the Proxmox web interface:
+    - Go to Datacenter → Storage
+    - Click "Add" → "Directory"
+    - Set ID to a descriptive name (e.g., "vm-storage")
+    - Set Directory to `/mnt/vm-storage` (or your preferred mount point)
+    - Check "Disk image" and "VZDump backup file"
+    - Click "Add"
+
+**Verification:**
+Verify that your new partition is properly created and formatted:
+```bash
+# Check if the partition exists
+lsblk
+
+# Check filesystem information
+df -h
+```
+
+You should see your new partition listed in the output. If you added it to Proxmox storage, it should also appear in the Proxmox web interface under Datacenter → Storage.
 
 **Next Step:** [2. Setting Up vGPU Support](#2-setting-up-vgpu-support)
 
@@ -571,7 +669,7 @@ Finally, we'll add the vGPU to the VM:
 8. Click "Add"
 
 
-   
+
 
 
 10. Start the VM
