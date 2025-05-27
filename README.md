@@ -126,7 +126,7 @@ Follow these steps to install Proxmox on your server:
 2. Accept the EULA by clicking "I agree"
 3. Select the target hard disk for installation
 
-   > 📝 **Note:** If using a single drive, limit boot partition size (50GB minimum) in the options (small button to the right of disk selection) to make space for VM storage.
+   > 📝 **IMPORTANT:** If using a single drive, limit boot partition size (>50GB minimum) in the options (small button to the right of disk selection) to make space for VM storage.
 
 4. Set your location and timezone
 5. Enter a password for the root user and provide an email address
@@ -172,11 +172,15 @@ Hugepages improve VM performance by reserving memory. This step is optional but 
    GRUB_CMDLINE_LINUX_DEFAULT="quiet iommu=pt pcie_aspm=off initcall_blacklist=sysfb_init default_hugepagesz=2M hugepagesz=1G hugepages=N"
    ```
 
-
-5. Update GRUB and restart:
+5. Update GRUB:
    ```bash
    update-grub
-   reboot
+   ```
+
+6. Create partition for VMs:
+   
+   ```
+   
    ```
 
 **Verification:**
