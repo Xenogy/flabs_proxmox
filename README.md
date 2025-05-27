@@ -189,7 +189,7 @@ You should see output showing the configured hugepages.
 
 ### 1.4 Create Disk Partition for VM Storage
 In this step we will create a disk partition (sectuib of a disk) to use for the VMs themselves.
-> ⚠️ **Important:** !READ CAREFULLY, INCORRECT CONFIGURATION CAN CORRUPT PROXMOX AND FORCE YOU TO REINSTALL!
+> ⚠️ **Important:** !READ CAREFULLY, INCORRECT CONFIGURATION CAN CORRUPT PROXMOX AND FORCE YOU TO REINSTALL!:
 **Steps:**
 
 1. **Identify Available Disks**
