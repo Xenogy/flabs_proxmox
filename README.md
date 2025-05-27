@@ -188,11 +188,8 @@ cat /proc/meminfo | grep Huge
 You should see output showing the configured hugepages.
 
 ### 1.4 Create Disk Partition for VM Storage
-
-If you have additional storage drives available, you can create dedicated partitions for VM storage. This step is optional but recommended for better performance and organization.
-
-> 📝 **Why create separate partitions?** Separating VM storage from the Proxmox system partition improves performance, makes backup management easier, and prevents VMs from filling up the system disk.
-
+In this step we will create a disk partition (sectuib of a disk) to use for the VMs themselves.
+> ⚠️ **Important:** !READ CAREFULLY, INCORRECT CONFIGURATION CAN CORRUPT PROXMOX AND FORCE YOU TO REINSTALL!
 **Steps:**
 
 1. **Identify Available Disks**
@@ -212,7 +209,7 @@ If you have additional storage drives available, you can create dedicated partit
 
    ![NVMe Disk Listing](./imgs/vm_partition/02-fdisk_list_nvme.png)
 
-   > ⚠️ **Important:** Make sure to identify the correct disk for partitioning. Do NOT partition the disk where Proxmox is installed (usually the first disk in the list).
+   > ⚠️ **Important:** Make sure to identify the correct disk for partitioning.
 
 2. **Create a New Partition**
 
