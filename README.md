@@ -226,37 +226,37 @@ In this step we will create a disk partition (sectuib of a disk) to use for the 
 
    ![Create New Partition](./imgs/vm_partition/03-fdisk_new_partition.png)
 
-4. **Select Partition Type**
-
-   - Type `p` to create a primary partition
-
-   ![Select Primary Partition](./imgs/vm_partition/04-fdisk_new_partition_primary.png)
-
-5. **Set Partition Number**
+4. **Set Partition Number**
 
    - Press Enter to accept the default partition number (usually 1, unless you're using the proxmox install disk for VM storage, in which case it can higher, but still accept the default)
 
    ![Set Partition Number](./imgs/vm_partition/05-fdisk_partition_number.png)
 
-6. **Set First Sector**
+5. **Select Partition Type**
+
+   - Type `p` to create a primary partition
+
+   ![Select Primary Partition](./imgs/vm_partition/04-fdisk_new_partition_primary.png)
+
+7. **Set First Sector**
 
    - Press Enter to accept the default first sector
 
    ![Set First Sector](./imgs/vm_partition/06-fdisk_first_sector.png)
 
-7. **Set Last Sector**
+8. **Set Last Sector**
 
    - Press Enter to use the entire disk, or specify a size (e.g., `+500G` for 500GB)
 
    ![Set Last Sector](./imgs/vm_partition/07-fdisk_last_sector.png)
 
-8. **Write Changes**
+9. **Write Changes**
 
    - Type `w` to write the changes to disk
 
    ![Write Changes](./imgs/vm_partition/08-fdisk_write_changes.png)
 
-9. **Create Volume Group in Proxmox**
+10. **Create Volume Group in Proxmox**
 
    Now add the new disk to Proxmox storage through the web interface:
 
