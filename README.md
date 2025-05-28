@@ -540,7 +540,7 @@ In this section, you'll set up a license server that allows your virtual machine
 
    x-dls-variables: &dls-variables
      TZ: Europe/Berlin     # REQUIRED: Set to your correct timezone
-     DLS_URL: localhost    # REQUIRED: Change to your server's IP address or hostname
+     DLS_URL: localhost    # REQUIRED: Change to your server's local IPv4 address or hostname
      DLS_PORT: 443
      LEASE_EXPIRE_DAYS: 90  # 90 days is maximum
      DATABASE: sqlite:////app/database/db.sqlite
