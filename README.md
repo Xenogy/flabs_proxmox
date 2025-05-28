@@ -127,7 +127,7 @@ Follow these steps to install Proxmox on your server:
 2. Accept the EULA by clicking "I agree"
 3. Select the target hard disk for installation
 
-   > 📝 **IMPORTANT:** If using a single drive, limit boot partition size (>50GB minimum) in the options (small button to the right of disk selection) to make space for VM storage.
+   > ⚠️ **!!!VERY IMPORTANT!!!:** If using a single drive, limit boot partition size (>50GB minimum) in the options (small button to the right of disk selection) to make space for VM storage.
 
 4. Set your location and timezone
 5. Enter a password for the root user and provide an email address
