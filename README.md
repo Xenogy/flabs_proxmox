@@ -226,15 +226,17 @@ In this step we will create a disk partition (sectuib of a disk) to use for the 
 
    ![Create New Partition](./imgs/vm_partition/03-fdisk_new_partition.png)
 
-4. **Set Partition Number**
+4. **Select Partition Type (can continue to step 5 if not appearing) **
+
+   - Type `p` to create a primary partition
+     
+5. **Set Partition Number**
 
    - Press Enter to accept the default partition number (usually 1, unless you're using the proxmox install disk for VM storage, in which case it can higher, but still accept the default)
 
    ![Set Partition Number](./imgs/vm_partition/05-fdisk_partition_number.png)
 
-5. **Select Partition Type**
 
-   - Type `p` to create a primary partition
 
    ![Select Primary Partition](./imgs/vm_partition/04-fdisk_new_partition_primary.png)
 
