@@ -166,11 +166,11 @@ Hugepages improve VM performance by reserving memory. This step is optional but 
 
    FOR INTEL:
    ```
-   GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt default_hugepagesz=2M hugepagesz=1G hugepages=N"
+   GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on iommu=pt initcall_blacklist=sysfb_init default_hugepagesz=2M hugepagesz=1G hugepages=N"
    ```
    FOR AMD:
    ```
-   GRUB_CMDLINE_LINUX_DEFAULT="quiet iommu=pt default_hugepagesz=2M hugepagesz=1G hugepages=N"
+   GRUB_CMDLINE_LINUX_DEFAULT="quiet iommu=pt initcall_blacklist=sysfb_init default_hugepagesz=2M hugepagesz=1G hugepages=N"
    ```
 
 5. Update GRUB and reboot:
