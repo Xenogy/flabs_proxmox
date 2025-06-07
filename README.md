@@ -327,11 +327,9 @@ Now we'll create a custom profile configuration to optimize performance.
    num_displays = 1
    vgpu_type = "NVS"                # Improves performance for Q profiles on some cards
    frl_enabled = 1                  # Framerate lock (0 = disabled), enabling can help prevent unneccesary resource usage
-
    display_width = 1920
    display_height = 1080
    max_pixels = 2073600             # 1920x1080
-
    framebuffer = 0x74000000         # 2GB vram
    framebuffer_reservation = 0xC000000  # 2GB vram
    ```
