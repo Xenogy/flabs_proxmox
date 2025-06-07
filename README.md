@@ -596,7 +596,20 @@ You can check if the license server is accessible by opening `https://your-serve
 
 In this section, we'll configure the Windows VM to use the vGPU and connect to the license server.
 
-### 6.1 Passing vGPU to VM
+### 6.1 Setting Up Remote Access
+
+Before changing the VM's display adapter, set up remote access:
+
+> ⚠️ **Important:** After switching to the vGPU, the Proxmox console will no longer work. You must set up remote access before proceeding.
+
+**Steps:**
+
+1. Download and install Parsec or your preferred remote desktop software
+2. Create an account if needed
+3. Configure the software for optimal performance
+4. Test the connection to ensure it works properly
+   
+### 6.2 Passing vGPU to VM
 
 Finally, we'll add the vGPU to the VM:
 
@@ -613,19 +626,6 @@ Finally, we'll add the vGPU to the VM:
 7. Check "PCI Express" and "Primary GPU" options
   ![Configure GPU](./imgs/pass_gpu-3-finish.png)
 8. Click "Add"
-   
-### 6.2 Setting Up Remote Access
-
-Before changing the VM's display adapter, set up remote access:
-
-> ⚠️ **Important:** After switching to the vGPU, the Proxmox console will no longer work. You must set up remote access before proceeding.
-
-**Steps:**
-
-1. Download and install Parsec or your preferred remote desktop software
-2. Create an account if needed
-3. Configure the software for optimal performance
-4. Test the connection to ensure it works properly
 
 ### 6.3 Updating VM Network Adapter
 
