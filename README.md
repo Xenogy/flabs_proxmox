@@ -596,26 +596,24 @@ You can check if the license server is accessible by opening `https://your-serve
 
 In this section, we'll configure the Windows VM to use the vGPU and connect to the license server.
 
-### 6.1 Installing NVIDIA GRID Client Driver
+### 6.1 Passing vGPU to VM
 
-**Files needed:**
-- NVIDIA GRID client driver (bundled with the vGPU host driver installed on Proxmox)
+Finally, we'll add the vGPU to the VM:
 
 **Steps:**
 
-1. Locate the NVIDIA GRID client driver (it's an .exe file bundled with the vGPU host driver)
-2. Transfer the driver to your Windows VM (tools like WinSCP work well for this)
-3. Run the installer and follow the on-screen instructions
-4. Restart the VM when prompted
-5. After installation, open PowerShell as Administrator and run:
-
-   ```powershell
-   # Replace SERVER_IP with your license server's IP address
-   curl.exe --insecure -L -X GET https://SERVER_IP/-/client-token -o "C:\Program Files\NVIDIA Corporation\vGPU Licensing\ClientConfigToken\client_configuration_token_$($(Get-Date).tostring('dd-MM-yy-hh-mm-ss')).tok"
-   ```
-
-   > 📝 **Note:** This command downloads a license token from your license server and saves it to the correct location.
-
+1. Shut down the VM completely
+2. In the Proxmox web interface, select your VM
+3. Click on "Hardware"
+  ![VM Hardware Tab](./imgs/pass_gpu-1-hardware.png)
+4. Click "Add" and select "PCI Device"
+  ![Select GPU](./imgs/pass_gpu-2-device.png)
+5. Select your GPU from the list
+6. Select your chosen vGPU profile under "MDev Type"
+7. Check "PCI Express" and "Primary GPU" options
+  ![Configure GPU](./imgs/pass_gpu-3-finish.png)
+8. Click "Add"
+   
 ### 6.2 Setting Up Remote Access
 
 Before changing the VM's display adapter, set up remote access:
@@ -648,26 +646,25 @@ Now we'll update the network adapter to improve performance:
 
 8. Start the VM and verify internet connectivity
 
-### 6.4 Passing vGPU to VM
+### 6.4 Installing NVIDIA GRID Client Driver
 
-Finally, we'll add the vGPU to the VM:
+**Files needed:**
+- NVIDIA GRID client driver (bundled with the vGPU host driver installed on Proxmox)
 
 **Steps:**
 
-1. Shut down the VM completely
-2. In the Proxmox web interface, select your VM
-3. Click on "Hardware"
-  ![VM Hardware Tab](./imgs/pass_gpu-1-hardware.png)
-4. Click "Add" and select "PCI Device"
-  ![Select GPU](./imgs/pass_gpu-2-device.png)
-5. Select your GPU from the list
-6. Select your chosen vGPU profile under "MDev Type"
-7. Check "PCI Express" and "Primary GPU" options
-  ![Configure GPU](./imgs/pass_gpu-3-finish.png)
-8. Click "Add"
+1. Locate the NVIDIA GRID client driver (it's an .exe file bundled with the vGPU host driver)
+2. Transfer the driver to your Windows VM (tools like WinSCP work well for this)
+3. Run the installer and follow the on-screen instructions
+4. Restart the VM when prompted
+5. After installation, open PowerShell as Administrator and run:
 
+   ```powershell
+   # Replace SERVER_IP with your license server's IP address
+   curl.exe --insecure -L -X GET https://SERVER_IP/-/client-token -o "C:\Program Files\NVIDIA Corporation\vGPU Licensing\ClientConfigToken\client_configuration_token_$($(Get-Date).tostring('dd-MM-yy-hh-mm-ss')).tok"
+   ```
 
-
+   > 📝 **Note:** This command downloads a license token from your license server and saves it to the correct location.
 
 
 10. Start the VM
