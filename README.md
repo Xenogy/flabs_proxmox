@@ -517,11 +517,14 @@ In this section, you'll set up a license server that allows your virtual machine
    ```
 3. Setup SSL certificate (might have to run as root user)
    ```bash
-   WORKING_DIR=/opt/docker/fastapi-dls/cert
-   mkdir -p $WORKING_DIR
-   cd $WORKING_DIR
-   # create ssl certificate for integrated webserver (uvicorn) - because clients rely on ssl
-   openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout  $WORKING_DIR/webserver.key -out $WORKING_DIR/webserver.crt
+    WORKING_DIR=/opt/docker/fastapi-dls/cert
+    mkdir -p $WORKING_DIR
+    cd $WORKING_DIR
+    # create instance private and public key for singing JWT's
+    openssl genrsa -out $WORKING_DIR/instance.private.pem 2048 
+    openssl rsa -in $WORKING_DIR/instance.private.pem -outform PEM -pubout -out $WORKING_DIR/instance.public.pem
+    # create ssl certificate for integrated webserver (uvicorn) - because clients rely on ssl
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout  $WORKING_DIR/webserver.key -out $WORKING_DIR/webserver.crt
    ```
    > ⚠️ **Important:** Make sure to set the correct country code, but the rest you can just skip through by pressing enter.
 
