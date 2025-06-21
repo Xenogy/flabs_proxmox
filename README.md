@@ -534,6 +534,7 @@ In this section, you'll set up a license server that allows your virtual machine
 
 1. Edit the `docker-compose.yml` file:
    ```bash
+   cd ~/vgpu_licenser
    nano docker-compose.yml
    ```
 
@@ -578,7 +579,6 @@ In this section, you'll set up a license server that allows your virtual machine
 
 1. Start the license server:
    ```bash
-   cd ~/vgpu_licenser
    docker compose up -d
    ```
 
