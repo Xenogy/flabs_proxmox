@@ -578,6 +578,7 @@ In this section, you'll set up a license server that allows your virtual machine
 
 1. Start the license server:
    ```bash
+   cd ~/vgpu_licenser
    docker compose up -d
    ```
 
