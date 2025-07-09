@@ -118,6 +118,7 @@ for node_id in "${!ALL_CORES_NODE[@]}"; do
 done
 if [[ ${#NUMA_NODE_IDS[@]} -eq 0 ]]; then error "No NUMA nodes with available cores found."; fi
 IFS=$'\n' NUMA_NODE_IDS=($(sort -n <<<"${NUMA_NODE_IDS[*]}")); unset IFS
+NUM_NUMA_NODES=${#NUMA_NODE_IDS[@]} # <<< ### THIS IS THE FIX ###
 log "Initialization complete. Total logical cores available for VMs: $TOTAL_LOGICAL_CORES_AVAILABLE"
 if [[ $TOTAL_LOGICAL_CORES_AVAILABLE -lt $CPU_COUNT ]]; then error "Total available cores ($TOTAL_LOGICAL_CORES_AVAILABLE) < required per VM ($CPU_COUNT)."; fi
 
@@ -148,13 +149,12 @@ for vmid in "${TARGET_VMIDS[@]}"; do
     log "--- Stage 0: Setting Core Count ---"; log "  Setting Core Count: -cores ${CPU_COUNT}"
     if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -cores "$CPU_COUNT"; then warn "Failed to set core count."; cores_step_failed=1; else log "  Successfully set core count."; fi; else log "  DRY RUN: qm set $vmid -cores ..."; cores_step_failed=0; fi
 
-    # --- Stage 1: Set CPU Type and Flags (via direct config edit) --- ### MODIFIED STAGE ###
+    # Stage 1: Set CPU Type and Flags (via direct config edit)
     if [[ $cores_step_failed -eq 0 ]]; then
         log "--- Stage 1: Setting CPU Type and Flags via direct config edit ---"
         log "  Target config line: cpu: ${CPU_OPTION_TARGET_STRING}"
         if [[ $DRY_RUN -eq 0 ]]; then
             # Use sed to delete any existing cpu line(s), then echo to append the correct one.
-            # This is the most reliable method, bypassing qm's validator.
             if sed -i '/^cpu:/d' "$config_file" && echo "cpu: ${CPU_OPTION_TARGET_STRING}" >> "$config_file"; then
                 log "  Successfully wrote CPU line to config file."
                 cpu_step_failed=0
