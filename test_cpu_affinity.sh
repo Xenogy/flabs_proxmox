@@ -1,16 +1,9 @@
 #!/bin/bash
 
 # --- Configuration ---
-# Set the desired CPU model. x86-64-v2-AES is a good modern baseline.
 CPU_TYPE_BASE="x86-64-v2-AES"
-# Add/remove CPU flags. Semicolon-separated.
-# +pdpe1gb: Exposes 1GB Hugepage capability to the guest.
-# -spec-intel: Disables Spectre (IBRS/IBPB) mitigations for performance. SECURITY RISK.
-# -md-clear: Disables VERW instruction on idle to clear microarchitectural buffers. SECURITY RISK.
 CPU_TYPE_FLAGS="+pdpe1gb;-spec-intel;-md-clear"
-# This combines the above into the final string used for the config file.
 CPU_OPTION_TARGET_STRING="${CPU_TYPE_BASE},flags=${CPU_TYPE_FLAGS}"
-# Option to disable automatic host core reservation if needed
 RESERVE_HOST_CORES=1 # Set to 0 to disable reservation
 
 # --- Script Logic ---
@@ -23,14 +16,14 @@ error() { echo "[ERROR] $@" >&2; exit 1; }
 
 usage() {
     echo "Usage: $0 -r <vmid_range> -c <cpu_count> [-i <ignored_vmids>] [-n] [-x]"
-    echo "  -r <vmid_range>:   Range of VM IDs (e.g., '100-105'). Required."
+    echo "  -r <vmid_range>:   Range of VM IDs. Required."
     echo "  -c <cpu_count>:    Number of CPU cores to assign to each VM. Required."
     echo "  -i <ignored_vmids>: Comma-separated list of VM IDs to ignore. Optional."
-    echo "  -n:                Dry run mode. Show what would be done. Optional."
+    echo "  -n:                Dry run mode. Optional."
     echo "  -x:                Disable automatic host core reservation. Optional."
     echo ""
-    echo "  This script sets core count, affinity, CPU type/flags (target: '${CPU_OPTION_TARGET_STRING}'),"
-    echo "  virtio NIC queues, 1GB hugepages, NUMA topology, and disables memory ballooning."
+    echo "  This script sets core count, affinity, CPU type/flags ('${CPU_OPTION_TARGET_STRING}'),"
+    echo "  queues, hugepages, NUMA, and disables ballooning."
     echo "  WARNING: Review security warnings about disabled mitigations."
     exit 1
 }
@@ -75,7 +68,7 @@ TARGET_VMIDS=(); while IFS= read -r line; do TARGET_VMIDS+=("$line"); done < <(p
 if [[ ${#TARGET_VMIDS[@]} -eq 0 ]]; then error "No valid VM IDs found in range: $VMID_RANGE"; fi
 log "Target VM IDs: ${TARGET_VMIDS[*]}"
 
-# --- NUMA Discovery and Host Core Reservation (Refactored for Speed) ---
+# --- NUMA Discovery and Host Core Reservation ---
 log "Detecting NUMA layout and reserving host cores..."
 declare -A ALL_CORES_NODE; declare -A CPU_TO_CORE; declare -A CPU_TO_SOCKET; declare -a ALL_LOGICAL_CPUS=();
 declare -A SOCKET_IDS; declare -A MIN_CORE_PER_SOCKET; declare -a CORES_TO_RESERVE=(); declare -A CORES_TO_RESERVE_MAP
@@ -127,7 +120,13 @@ declare -A ASSIGNED_CORES_TOTAL; CURRENT_NODE_INDEX=0
 log "Starting VM configuration process..."
 for vmid in "${TARGET_VMIDS[@]}"; do
     log "--- Processing VMID: $vmid ---"
-    if [[ -v IGNORED_VMID_MAP["$vmid"] ]]; then log "Ignoring VMID $vmid."; continue; fi
+    if [[ -v IGNORED_VMID_MAP["$vmid"] ]]; then
+        log "Ignoring VMID $vmid from ignore list."
+        # Unlike the main loop, we need to explicitly remove the ignored ID from the TARGET_VMIDS array
+        # This is a bit tricky, so for now we just skip.
+        # A more robust solution would be to filter the array at the start.
+        continue
+    fi
     if ! qm config "$vmid" > /dev/null 2>&1; then warn "VMID $vmid does not exist. Skipping."; continue; fi
 
     # Find a suitable NUMA node and cores
