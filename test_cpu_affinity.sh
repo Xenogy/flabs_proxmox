@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# --- BASH VERSION CHECK ---
+# This script requires features from Bash v4.0+. Exit if not compatible.
+if [[ -z "$BASH_VERSION" || "${BASH_VERSION%%.*}" -lt 4 ]]; then
+    echo "ERROR: This script requires Bash version 4.0 or newer." >&2
+    echo "Your Bash version is: ${BASH_VERSION:-'Not Bash or unknown'}" >&2
+    echo "Please run with a modern Bash shell (e.g., 'bash ./your_script_name.sh')." >&2
+    exit 1
+fi
+
 # --- Configuration ---
 CPU_CONFIG_STRING="host,flags=+md-clear;-pcid;-spec-ctrl;-ssbd;+pdpe1gb;+hv-tlbflush;+aes"
 RESERVE_HOST_CORES=1 # Set to 0 to disable reservation
@@ -19,7 +28,7 @@ usage() {
     echo "  -i <ignored_vmids>: Comma-separated list of VM IDs to ignore. Optional."
     echo "  -n:                Dry run mode. Optional."
     echo "  -x:                Disable automatic host core reservation. Optional."
-    echo "  -s:                Enable sibling-aware core assignment (prefers keeping hyperthreads together). Optional."
+    echo "  -s:                Enable sibling-aware core assignment. Optional."
     echo ""
     echo "  This script sets core count, affinity, CPU type/flags (target: '${CPU_CONFIG_STRING}'),"
     echo "  queues, hugepages, NUMA, and disables ballooning."
@@ -28,24 +37,40 @@ usage() {
 }
 
 parse_range() {
-    local input_range=$1; local output_list=(); IFS=',' read -ra ranges <<< "$input_range"
-    for range in "${ranges[@]}"; do if [[ "$range" == *-* ]]; then local start=$(echo "$range" | cut -d'-' -f1); local end=$(echo "$range" | cut -d'-' -f2); if ! [[ "$start" =~ ^[0-9]+$ && "$end" =~ ^[0-9]+$ && "$start" -le "$end" ]]; then error "Invalid range: $range"; fi; for (( i=start; i<=end; i++ )); do output_list+=("$i"); done; elif [[ "$range" =~ ^[0-9]+$ ]]; then output_list+=("$range"); else error "Invalid element: $range"; fi; done
+    local input_range=$1; local output_list=()
+    IFS=',' read -ra ranges <<< "$input_range"
+    for range in "${ranges[@]}"; do
+        if [[ "$range" == *-* ]]; then
+            local start; start=$(echo "$range" | cut -d'-' -f1)
+            local end; end=$(echo "$range" | cut -d'-' -f2)
+            if ! [[ "$start" =~ ^[0-9]+$ && "$end" =~ ^[0-9]+$ && "$start" -le "$end" ]]; then error "Invalid range: $range"; fi
+            for (( i=start; i<=end; i++ )); do output_list+=("$i"); done
+        elif [[ "$range" =~ ^[0-9]+$ ]]; then output_list+=("$range");
+        else error "Invalid element: $range"; fi
+    done
     printf "%s\n" "${output_list[@]}" | sort -un
 }
 
 # --- Argument Parsing ---
 VMID_RANGE=""; CPU_COUNT=""; IGNORED_VMIDS_RAW=""; DRY_RUN=0; SIBLING_AWARE=0
 while getopts "r:c:i:nxhs" opt; do
-    case $opt in r) VMID_RANGE="$OPTARG" ;; c) CPU_COUNT="$OPTARG" ;; i) IGNORED_VMIDS_RAW="$OPTARG" ;; n) DRY_RUN=1 ;; x) RESERVE_HOST_CORES=0 ;; s) SIBLING_AWARE=1 ;; h) usage ;; \?) error "Invalid option: -$OPTARG" ;; esac
+    case $opt in
+        r) VMID_RANGE="$OPTARG" ;; c) CPU_COUNT="$OPTARG" ;; i) IGNORED_VMIDS_RAW="$OPTARG" ;;
+        n) DRY_RUN=1 ;; x) RESERVE_HOST_CORES=0 ;; s) SIBLING_AWARE=1 ;;
+        h) usage ;; \?) error "Invalid option: -$OPTARG" ;;
+    esac
 done
+
 if [[ -z "$VMID_RANGE" || -z "$CPU_COUNT" ]]; then error "VM ID range (-r) and CPU count (-c) are required."; fi
 if ! [[ "$CPU_COUNT" =~ ^[1-9][0-9]*$ ]]; then error "CPU count (-c) must be a positive integer."; fi
 if [[ $RESERVE_HOST_CORES -eq 1 ]]; then log "Host core reservation ENABLED."; else log "Host core reservation DISABLED by -x flag."; fi
 if [[ $SIBLING_AWARE -eq 1 ]]; then log "Sibling-aware core assignment ENABLED."; else log "Linear core assignment ENABLED."; fi
 
 # --- Prerequisite Checks ---
-if [[ $EUID -ne 0 && $DRY_RUN -eq 0 ]]; then error "Must run as root unless in dry run mode."; fi
-for cmd in qm lscpu grep awk sed sort head cut declare; do if ! command -v $cmd &> /dev/null; then if [[ "$cmd" == "declare" && "$(type -t declare)" == "builtin" ]]; then continue; fi; error "Required command '$cmd' not found."; fi; done
+if [[ $EUID -ne 0 && $DRY_RUN -eq 0 ]]; then error "This script must be run as root unless in dry run mode."; fi
+for cmd in qm lscpu grep awk sed sort head cut; do
+    if ! command -v "$cmd" &> /dev/null; then error "Required command '$cmd' not found."; fi
+done
 
 # --- Security and Host Config Warnings ---
 log "********************************************************************************"
@@ -61,7 +86,13 @@ log "***********************************"
 
 # --- Parse Ignored VMs ---
 declare -A IGNORED_VMID_MAP
-if [[ -n "$IGNORED_VMIDS_RAW" ]]; then IFS=',' read -ra ignored_list <<< "$IGNORED_VMIDS_RAW"; for vmid in "${ignored_list[@]}"; do if [[ "$vmid" =~ ^[0-9]+$ ]]; then IGNORED_VMID_MAP["$vmid"]=1; log "Will ignore VMID: $vmid"; else warn "Ignoring invalid VMID '$vmid' in ignored list."; fi; done; fi
+if [[ -n "$IGNORED_VMIDS_RAW" ]]; then
+    IFS=',' read -ra ignored_list <<< "$IGNORED_VMIDS_RAW"
+    for vmid in "${ignored_list[@]}"; do
+        if [[ "$vmid" =~ ^[0-9]+$ ]]; then IGNORED_VMID_MAP["$vmid"]=1; log "Will ignore VMID: $vmid";
+        else warn "Ignoring invalid VMID '$vmid' in ignored list."; fi
+    done
+fi
 
 # --- Parse Target VMs ---
 TARGET_VMIDS_TEMP=()
@@ -71,26 +102,15 @@ for vmid in "${TARGET_VMIDS_TEMP[@]}"; do if [[ ! -v IGNORED_VMID_MAP["$vmid"] ]
 if [[ ${#TARGET_VMIDS[@]} -eq 0 ]]; then error "No valid, non-ignored VM IDs found to process."; fi
 log "Final list of VMs to process: ${TARGET_VMIDS[*]}"
 
-# --- NUMA Discovery and Host Core Reservation (Most Robust Version) --- ### MODIFIED SECTION ###
+# --- NUMA Discovery and Host Core Reservation ---
 log "Detecting NUMA layout and reserving host cores..."
-declare -A ALL_CORES_NODE; declare -A CPU_TO_CORE; declare -A CPU_TO_SOCKET; declare -a ALL_LOGICAL_CPUS=();
-declare -A SOCKET_IDS; declare -A MIN_CORE_PER_SOCKET; declare -a CORES_TO_RESERVE=(); declare -A CORES_TO_RESERVE_MAP
+declare -A ALL_CORES_NODE; declare -A CPU_TO_CORE; declare -A CPU_TO_SOCKET; declare -a ALL_LOGICAL_CPUS
+declare -A SOCKET_IDS; declare -A MIN_CORE_PER_SOCKET; declare -a CORES_TO_RESERVE; declare -A CORES_TO_RESERVE_MAP
 SMT_LEVEL=1
 
-lscpu_output=""
-lscpu_exit_code=0
-set +e
-# Run the command WITHOUT redirecting stderr, so we see any errors.
-lscpu_output=$(lscpu -p=CPU,CORE,SOCKET,NODE)
-lscpu_exit_code=$?
-set -e
-
-if [[ $lscpu_exit_code -ne 0 ]]; then
-    error "lscpu command failed with exit code $lscpu_exit_code. Run 'lscpu -p=CPU,CORE,SOCKET,NODE' manually to diagnose."
-fi
-if [[ -z "$lscpu_output" ]]; then
-    error "lscpu command succeeded but produced no output. Cannot detect CPU topology."
-fi
+# Safely capture lscpu output and check for errors
+lscpu_output=$(lscpu -p=CPU,CORE,SOCKET,NODE 2>&1) || error "lscpu command failed. Please check if it is installed and works. The error was:\n$lscpu_output"
+if [[ -z "$lscpu_output" ]]; then error "lscpu command succeeded but produced no output. Cannot detect CPU topology."; fi
 
 while IFS= read -r line; do
     [[ "$line" =~ ^# ]] && continue; [[ -z "$line" ]] && continue
@@ -151,25 +171,49 @@ for vmid in "${TARGET_VMIDS[@]}"; do
     # Find a suitable NUMA node and cores
     assigned_node=-1; cores_to_assign_list=(); nodes_checked=0; start_node_check_index=$CURRENT_NODE_INDEX
     while [[ $nodes_checked -lt $NUM_NUMA_NODES ]]; do
-        node_id=${NUMA_NODE_IDS[$CURRENT_NODE_INDEX]}; if [[ ! -v AVAILABLE_CORES_NODE["$node_id"] || -z "${AVAILABLE_CORES_NODE["$node_id"]}" ]]; then log "Node $node_id has no available cores."; nodes_checked=$((nodes_checked + 1)); CURRENT_NODE_INDEX=$(((CURRENT_NODE_INDEX + 1) % NUM_NUMA_NODES)); continue; fi
-        available_cores_on_node=(${AVAILABLE_CORES_NODE["$node_id"]}); num_available=${#available_cores_on_node[@]}; log "Checking Node $node_id: $num_available available core(s)."
+        node_id=${NUMA_NODE_IDS[$CURRENT_NODE_INDEX]}
+        if [[ ! -v AVAILABLE_CORES_NODE["$node_id"] || -z "${AVAILABLE_CORES_NODE["$node_id"]}" ]]; then
+            log "Node $node_id has no available cores. Checking next."
+            nodes_checked=$((nodes_checked + 1)); CURRENT_NODE_INDEX=$(((CURRENT_NODE_INDEX + 1) % NUM_NUMA_NODES)); continue;
+        fi
+        available_cores_on_node=(${AVAILABLE_CORES_NODE["$node_id"]}); num_available=${#available_cores_on_node[@]};
+        log "Checking Node $node_id: $num_available available core(s)."
         if [[ $num_available -ge $CPU_COUNT ]]; then
             temp_assigned_cores=();
             if [[ $SIBLING_AWARE -eq 1 && $SMT_LEVEL -gt 1 ]]; then
                 log "  Using sibling-aware assignment strategy..."; cores_to_find=$CPU_COUNT; declare -A available_by_phys_core
                 for cpu in "${available_cores_on_node[@]}"; do phys_core=${CPU_TO_CORE["$cpu"]}; available_by_phys_core["$phys_core"]+="$cpu "; done
-                for phys_core in "${!available_by_phys_core[@]}"; do if [[ $cores_to_find -lt $SMT_LEVEL ]]; then break; fi; siblings_on_core=(${available_by_phys_core["$phys_core"]}); if [[ ${#siblings_on_core[@]} -eq $SMT_LEVEL ]]; then log "    Found full physical core $phys_core"; temp_assigned_cores+=( "${siblings_on_core[@]}" ); cores_to_find=$(( cores_to_find - SMT_LEVEL )); unset available_by_phys_core["$phys_core"]; fi; done
+                for phys_core in "${!available_by_phys_core[@]}"; do
+                    if [[ $cores_to_find -lt $SMT_LEVEL ]]; then break; fi
+                    siblings_on_core=(${available_by_phys_core["$phys_core"]})
+                    if [[ ${#siblings_on_core[@]} -eq $SMT_LEVEL ]]; then
+                        log "    Found full physical core $phys_core"; temp_assigned_cores+=( "${siblings_on_core[@]}" ); cores_to_find=$(( cores_to_find - SMT_LEVEL )); unset available_by_phys_core["$phys_core"];
+                    fi
+                done
                 if [[ $cores_to_find -gt 0 ]]; then
-                    log "    Need to find $cores_to_find more single cores..."; for phys_core in "${!available_by_phys_core[@]}"; do single_cores=(${available_by_phys_core["$phys_core"]}); for cpu in "${single_cores[@]}"; do if [[ $cores_to_find -gt 0 ]]; then log "      Taking single core $cpu"; temp_assigned_cores+=( "$cpu" ); cores_to_find=$(( cores_to_find - 1 )); else break 2; fi; done; done; fi
+                    log "    Need to find $cores_to_find more single cores...";
+                    for phys_core in "${!available_by_phys_core[@]}"; do
+                        single_cores=(${available_by_phys_core["$phys_core"]})
+                        for cpu in "${single_cores[@]}"; do
+                            if [[ $cores_to_find -gt 0 ]]; then log "      Taking single core $cpu"; temp_assigned_cores+=( "$cpu" ); cores_to_find=$(( cores_to_find - 1 ));
+                            else break 2; fi
+                        done
+                    done
+                fi
             else
-                log "  Using linear assignment strategy..."; cores_to_find=0; temp_assigned_cores=( "${available_cores_on_node[@]:0:$CPU_COUNT}" ); fi
+                log "  Using linear assignment strategy..."; cores_to_find=0;
+                temp_assigned_cores=( "${available_cores_on_node[@]:0:$CPU_COUNT}" )
+            fi
 
             if [[ $cores_to_find -eq 0 && ${#temp_assigned_cores[@]} -eq $CPU_COUNT ]]; then
-                cores_to_assign_list=( "${temp_assigned_cores[@]}" ); assigned_node=$node_id; log "Selected Node $node_id. Assigning cores: ${cores_to_assign_list[*]}"
-                new_available_str=""; for core in "${available_cores_on_node[@]}"; do is_assigned=0; for assigned_core in "${cores_to_assign_list[@]}"; do if [[ "$core" == "$assigned_core" ]]; then is_assigned=1; break; fi; done; if [[ $is_assigned -eq 0 ]]; then new_available_str+="$core "; fi; done; AVAILABLE_CORES_NODE["$node_id"]="${new_available_str% }"; break;
+                cores_to_assign_list=( "${temp_assigned_cores[@]}" ); assigned_node=$node_id;
+                log "Selected Node $node_id. Assigning cores: ${cores_to_assign_list[*]}"
+                new_available_str=""; for core in "${available_cores_on_node[@]}"; do is_assigned=0; for assigned_core in "${cores_to_assign_list[@]}"; do if [[ "$core" == "$assigned_core" ]]; then is_assigned=1; break; fi; done; if [[ $is_assigned -eq 0 ]]; then new_available_str+="$core "; fi; done
+                AVAILABLE_CORES_NODE["$node_id"]="${new_available_str% }"; break
             else log "  Could not find a suitable core combination on this node. Checking next."; fi
         fi
-        CURRENT_NODE_INDEX=$(((CURRENT_NODE_INDEX + 1) % NUM_NUMA_NODES)); nodes_checked=$((nodes_checked + 1)); if [[ $CURRENT_NODE_INDEX -eq $start_node_check_index ]]; then break; fi
+        CURRENT_NODE_INDEX=$(((CURRENT_NODE_INDEX + 1) % NUM_NUMA_NODES)); nodes_checked=$((nodes_checked + 1));
+        if [[ $CURRENT_NODE_INDEX -eq $start_node_check_index ]]; then break; fi
     done
     if [[ $assigned_node -eq -1 ]]; then warn "Could not find any NUMA node with a valid core combination for VM $vmid. Skipping."; CURRENT_NODE_INDEX=$(((start_node_check_index + 1) % NUM_NUMA_NODES)); continue; fi
 
@@ -178,8 +222,9 @@ for vmid in "${TARGET_VMIDS[@]}"; do
     cores_step_failed=0; cpu_step_failed=0; affinity_step_failed=0; numa_enable_step_failed=0; numa0_config_step_failed=0; hugepages_step_failed=0; balloon_step_failed=0
 
     # Stage 0: Set Core Count
-    log "--- Stage 0: Setting Core Count ---";
-    if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -cores "$CPU_COUNT"; then warn "Failed to set core count."; cores_step_failed=1; else log "  Successfully set core count."; fi; else log "  DRY RUN: qm set $vmid -cores ${CPU_COUNT}"; cores_step_failed=0; fi
+    log "--- Stage 0: Setting Core Count ---"
+    if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -cores "$CPU_COUNT"; then warn "Failed to set core count."; cores_step_failed=1; else log "  Successfully set core count."; fi;
+    else log "  DRY RUN: qm set $vmid -cores ${CPU_COUNT}"; cores_step_failed=0; fi
 
     # Stage 1: Set CPU Type and Flags
     if [[ $cores_step_failed -eq 0 ]]; then
@@ -203,27 +248,34 @@ for vmid in "${TARGET_VMIDS[@]}"; do
 
     # Stage 3a: Enable NUMA
     if [[ $critical_cpu_failed -eq 0 ]]; then
-        log "--- Stage 3a: Enabling NUMA ---"; if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -numa 1; then warn "Failed to enable NUMA."; numa_enable_step_failed=1; else log "Successfully enabled NUMA."; fi; else log "    DRY RUN: qm set $vmid -numa 1"; fi
+        log "--- Stage 3a: Enabling NUMA ---"
+        if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -numa 1; then warn "Failed to enable NUMA."; numa_enable_step_failed=1; else log "Successfully enabled NUMA."; fi; else log "    DRY RUN: qm set $vmid -numa 1"; fi
     else log "  Skipping NUMA enabling."; numa_enable_step_failed=1; fi
 
     # Stage 3b: Configure Guest NUMA Node 0
     if [[ $critical_cpu_failed -eq 0 && $numa_enable_step_failed -eq 0 ]]; then
         log "--- Stage 3b: Configuring Guest NUMA Node 0 ---"
-        vm_memory=$(qm config "$vmid" | grep '^memory:' | awk '{print $2}') || vm_memory=""; if [[ -z "$vm_memory" ]]; then warn "  Could not fetch memory size for VM $vmid."; numa0_config_step_failed=1; else
+        vm_memory=$(qm config "$vmid" | grep '^memory:' | awk '{print $2}') || vm_memory=""
+        if [[ -z "$vm_memory" ]]; then warn "  Could not fetch memory size for VM $vmid."; numa0_config_step_failed=1; else
             numa_cpus_range="0-$((CPU_COUNT - 1))"; numa0_opts="cpus=${numa_cpus_range},hostnodes=${assigned_node},memory=${vm_memory},policy=bind"
             log "  Setting Guest NUMA Node 0: -numa0 \"${numa0_opts}\""
-            if [[ $DRY_RUN -eq 0 ]]; then qm set "$vmid" --delete numa0 &> /dev/null || true; if ! qm set "$vmid" -numa0 "$numa0_opts"; then warn "  Failed to set numa0 config."; numa0_config_step_failed=1; else log "  Successfully configured numa0."; fi; else log "    DRY RUN: qm set $vmid -numa0 ..."; fi
+            if [[ $DRY_RUN -eq 0 ]]; then
+                qm set "$vmid" --delete numa0 &> /dev/null || true
+                if ! qm set "$vmid" -numa0 "$numa0_opts"; then warn "  Failed to set numa0 config."; numa0_config_step_failed=1; else log "  Successfully configured numa0."; fi
+            else log "    DRY RUN: qm set $vmid -numa0 ..."; fi
         fi
     else log "  Skipping NUMA0 configuration."; numa0_config_step_failed=1; fi
 
     # Stage 4: Set Hugepages
     if [[ $critical_cpu_failed -eq 0 ]]; then
-        log "--- Stage 4: Setting 1GB Hugepages ---"; if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -hugepages 1024; then warn "Failed to set hugepages. (Host configured?)"; else log "Successfully set hugepages."; fi; else log "    DRY RUN: qm set $vmid -hugepages 1024"; fi
+        log "--- Stage 4: Setting 1GB Hugepages ---"
+        if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -hugepages 1024; then warn "Failed to set hugepages. (Host configured?)"; else log "Successfully set hugepages."; fi; else log "    DRY RUN: qm set $vmid -hugepages 1024"; fi
     else log "  Skipping Hugepages setting."; fi
 
     # Stage 5: Disable Ballooning
     if [[ $critical_cpu_failed -eq 0 ]]; then
-        log "--- Stage 5: Disabling Memory Ballooning ---"; if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -balloon 0; then warn "Failed to disable ballooning."; else log "Successfully disabled ballooning."; fi; else log "    DRY RUN: qm set $vmid -balloon 0"; fi
+        log "--- Stage 5: Disabling Memory Ballooning ---"
+        if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -balloon 0; then warn "Failed to disable ballooning."; else log "Successfully disabled ballooning."; fi; else log "    DRY RUN: qm set $vmid -balloon 0"; fi
     else log "  Skipping Ballooning setting."; fi
 
     # Stage 6: Set virtio NIC queues directly
@@ -231,7 +283,17 @@ for vmid in "${TARGET_VMIDS[@]}"; do
         log "--- Stage 6: Setting virtio NIC queues ---"; declare -a net_lines; net_lines=()
         while IFS= read -r line; do [[ -z "$line" ]] && continue; net_lines+=("$line"); done < <(qm config "$vmid" | grep '^net[0-9]\+:') || { log "  No network interfaces (netX) found."; net_lines=(); }
         if [[ ${#net_lines[@]} -gt 0 ]]; then
-            for net_line in "${net_lines[@]}"; do iface=$(echo "$net_line" | awk -F': ' '{print $1}'); current_opts=$(echo "$net_line" | awk -F': ' '{print $2}'); if [[ "$current_opts" == *"virtio"* ]]; then current_queues=$(echo "$current_opts" | grep -o 'queues=[0-9]\+' | cut -d= -f2) || current_queues=""; if [[ "$current_queues" == "$CPU_COUNT" ]]; then log "    Queues already set for ${iface}."; continue; fi; new_opts=$(echo "$current_opts" | sed -E 's/,?queues=[0-9]+//g; s/^,//; s/,*$//' ); if [[ -n "$new_opts" ]]; then new_opts+=",queues=${CPU_COUNT}"; else base_opts=$(echo "$current_opts" | awk -F, '{print $1}'); new_opts="${base_opts},queues=${CPU_COUNT}"; new_opts=${new_opts#,} ; fi; log "    Setting options for ${iface}: '${new_opts}'"; if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -"$iface" "$new_opts"; then warn "    Failed to set queues for ${iface}."; fi; else log "    DRY RUN: qm set $vmid -${iface} ..."; fi; else log "    ${iface} not virtio, skipping."; fi; done
+            for net_line in "${net_lines[@]}"; do
+                iface=$(echo "$net_line" | awk -F': ' '{print $1}'); current_opts=$(echo "$net_line" | awk -F': ' '{print $2}')
+                if [[ "$current_opts" == *"virtio"* ]]; then
+                    current_queues=$(echo "$current_opts" | grep -o 'queues=[0-9]\+' | cut -d= -f2) || current_queues=""
+                    if [[ "$current_queues" == "$CPU_COUNT" ]]; then log "    Queues already set for ${iface}."; continue; fi
+                    new_opts=$(echo "$current_opts" | sed -E 's/,?queues=[0-9]+//g; s/^,//; s/,*$//' )
+                    if [[ -n "$new_opts" ]]; then new_opts+=",queues=${CPU_COUNT}"; else base_opts=$(echo "$current_opts" | awk -F, '{print $1}'); new_opts="${base_opts},queues=${CPU_COUNT}"; new_opts=${new_opts#,} ; fi
+                    log "    Setting options for ${iface}: '${new_opts}'"
+                    if [[ $DRY_RUN -eq 0 ]]; then if ! qm set "$vmid" -"$iface" "$new_opts"; then warn "    Failed to set queues for ${iface}."; fi; else log "    DRY RUN: qm set $vmid -${iface} ..."; fi
+                else log "    ${iface} not virtio, skipping."; fi
+            done
         fi
     else log "  Skipping NIC queue setting."; fi
 
