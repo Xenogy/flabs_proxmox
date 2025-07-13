@@ -109,7 +109,7 @@ declare -A SOCKET_IDS; declare -A MIN_CORE_PER_SOCKET; declare -a CORES_TO_RESER
 SMT_LEVEL=1
 
 # Safely capture lscpu output and check for errors
-lscpu_output=$(lscpu -p=CPU,CORE,SOCKET,NODE 2>&1) || error "lscpu command failed. Please check if it is installed and works. The error was:\n$lscpu_output"
+lscpu_output=$(lscpu -p=CPU,CORE,SOCKET,NODE 2>&1) || error "lscpu command failed. Please check if it is installed and works. Error was:\n$lscpu_output"
 if [[ -z "$lscpu_output" ]]; then error "lscpu command succeeded but produced no output. Cannot detect CPU topology."; fi
 
 while IFS= read -r line; do
@@ -174,7 +174,7 @@ for vmid in "${TARGET_VMIDS[@]}"; do
         node_id=${NUMA_NODE_IDS[$CURRENT_NODE_INDEX]}
         if [[ ! -v AVAILABLE_CORES_NODE["$node_id"] || -z "${AVAILABLE_CORES_NODE["$node_id"]}" ]]; then
             log "Node $node_id has no available cores. Checking next."
-            nodes_checked=$((nodes_checked + 1)); CURRENT_NODE_INDEX=$(((CURRENT_NODE_INDEX + 1) % NUM_NUMA_NODES)); continue;
+            nodes_checked=$((nodes_checked + 1)); CURRENT_NODE_INDEX=$(((CURRENT_NODE_INDEX + 1) % NUM_NUMA_NODES)); continue
         fi
         available_cores_on_node=(${AVAILABLE_CORES_NODE["$node_id"]}); num_available=${#available_cores_on_node[@]};
         log "Checking Node $node_id: $num_available available core(s)."
@@ -201,12 +201,12 @@ for vmid in "${TARGET_VMIDS[@]}"; do
                     done
                 fi
             else
-                log "  Using linear assignment strategy..."; cores_to_find=0;
+                log "  Using linear assignment strategy..."; cores_to_find=0
                 temp_assigned_cores=( "${available_cores_on_node[@]:0:$CPU_COUNT}" )
             fi
 
             if [[ $cores_to_find -eq 0 && ${#temp_assigned_cores[@]} -eq $CPU_COUNT ]]; then
-                cores_to_assign_list=( "${temp_assigned_cores[@]}" ); assigned_node=$node_id;
+                cores_to_assign_list=( "${temp_assigned_cores[@]}" ); assigned_node=$node_id
                 log "Selected Node $node_id. Assigning cores: ${cores_to_assign_list[*]}"
                 new_available_str=""; for core in "${available_cores_on_node[@]}"; do is_assigned=0; for assigned_core in "${cores_to_assign_list[@]}"; do if [[ "$core" == "$assigned_core" ]]; then is_assigned=1; break; fi; done; if [[ $is_assigned -eq 0 ]]; then new_available_str+="$core "; fi; done
                 AVAILABLE_CORES_NODE["$node_id"]="${new_available_str% }"; break
