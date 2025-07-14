@@ -1,3 +1,5 @@
+## EXECUTE IN POWERSHELL: PowerShell -ExecutionPolicy Bypass -File "C:\Users\Administrator\Downloads\popupclose_install.ps1"
+
 # --- Configuration ---
 # The GitHub page URL for the file
 $githubPageUrl = "https://github.com/Xenogy/flabs_proxmox/blob/main/popupv2.exe"
