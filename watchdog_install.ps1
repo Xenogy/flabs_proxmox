@@ -1,4 +1,4 @@
-## RUN IN POWERSHELL ON VM: PowerShell -ExecutionPolicy Bypass -File ".\watchdog_install.ps1"
+## RUN IN POWERSHELL ON VM: PowerShell -ExecutionPolicy Bypass -File "C:\Users\Administrator\Downloads\watchdog_install.ps1"
 
 # =====================================================================
 # --- CONFIGURATION ---
