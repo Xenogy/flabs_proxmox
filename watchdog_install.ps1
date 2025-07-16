@@ -18,7 +18,7 @@ $oldExeNames = @(
 )
 
 # =====================================================================
-# --- SCRIPT LOGIC (No changes needed below) ---
+# --- SCRIPT LOGIC ---
 # =====================================================================
 
 Write-Host "Installer starting..."
