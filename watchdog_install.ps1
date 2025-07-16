@@ -11,13 +11,11 @@ $fileName = "watchdog.exe"
 
 # --- OLD VERSIONS TO DELETE ---
 # Add any old .exe filenames you may have used here. The script will hunt
-# for these and remove them.
+# for these and remove them. I've added 'watchdog.exe' based on your screenshot.
 $oldExeNames = @(
+    "popupcloser.exe",
     "popupv2.exe",
     "watchdog.exe"
-    "watchdog.exe - Shortcut",
-    "popupcloser.exe",
-    "popupv2.exe - Shortcut"
 )
 
 # =====================================================================
@@ -39,40 +37,48 @@ try {
 
 # 2. CLEANUP PREVIOUS VERSIONS
 Write-Host "Step 1: Cleaning up previous versions..." -ForegroundColor Green
+$allKnownExes = $oldExeNames + $fileName
 
-# --- NEW: Hunt for and delete all specified old EXEs ---
-Write-Host " - Checking for known old executables..."
-foreach ($oldName in $oldExeNames) {
-    $oldProcessName = $oldName.Replace(".exe", "")
-    $oldFilePath = Join-Path -Path $startupFolderPath -ChildPath $oldName
-    
+# --- Cleanup Loop for Processes and Files ---
+Write-Host " - Checking for old processes and files..."
+foreach ($exeName in $allKnownExes) {
+    $procName = $exeName.Replace(".exe", "")
+    $filePath = Join-Path -Path $startupFolderPath -ChildPath $exeName
+
     # Stop the running process if it exists
-    if (Get-Process -Name $oldProcessName -ErrorAction SilentlyContinue) {
-        Write-Host "   - Found running process '$oldProcessName'. Terminating..." -ForegroundColor Yellow
-        Stop-Process -Name $oldProcessName -Force -ErrorAction SilentlyContinue
+    if (Get-Process -Name $procName -ErrorAction SilentlyContinue) {
+        Write-Host "   - Found running process '$procName'. Terminating..." -ForegroundColor Yellow
+        Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
     }
     
     # Delete the old file if it exists
-    if (Test-Path -Path $oldFilePath) {
-        Write-Host "   - Found old file '$oldName'. Deleting..." -ForegroundColor Yellow
-        Remove-Item -Path $oldFilePath -Force -ErrorAction SilentlyContinue
+    if (Test-Path -Path $filePath) {
+        Write-Host "   - Found file '$exeName'. Deleting..." -ForegroundColor Yellow
+        Remove-Item -Path $filePath -Force -ErrorAction SilentlyContinue
     }
 }
 
-# Clean up the primary target file/process as well
-Write-Host " - Checking for primary process '$processName'..."
-if (Get-Process -Name $processName -ErrorAction SilentlyContinue) {
-    Write-Host "   - Terminating '$processName' to prepare for update..." -ForegroundColor Yellow
-    Stop-Process -Name $processName -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1 # Give it a moment to release the file handle
-}
-$destinationPath = Join-Path -Path $startupFolderPath -ChildPath $fileName
-if (Test-Path -Path $destinationPath) {
-    Write-Host "   - Deleting '$fileName' to prepare for update..." -ForegroundColor Yellow
-    Remove-Item -Path $destinationPath -Force
+# --- NEW: Cleanup Loop for Shortcuts (.lnk files) ---
+Write-Host " - Checking for old shortcuts..."
+try {
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcutFiles = Get-ChildItem -Path $startupFolderPath -Filter "*.lnk" -ErrorAction SilentlyContinue
+
+    foreach ($shortcut in $shortcutFiles) {
+        $targetPath = $shell.CreateShortcut($shortcut.FullName).TargetPath
+        $targetFilename = Split-Path -Path $targetPath -Leaf # Gets just the filename like "popupv2.exe"
+
+        if ($allKnownExes -contains $targetFilename) {
+            Write-Host "   - Found shortcut '$($shortcut.Name)' pointing to '$targetFilename'. Deleting..." -ForegroundColor Yellow
+            Remove-Item -Path $shortcut.FullName -Force
+        }
+    }
+} catch {
+    Write-Host "   - Warning: Could not check for shortcuts. This might happen on very restricted systems." -ForegroundColor Yellow
 }
 
-# Clean up any leftover source files
+
+# --- Cleanup for .ahk source files ---
 Write-Host " - Checking for old AutoHotkey source files (*.ahk)..."
 $oldAhkFiles = Get-ChildItem -Path $startupFolderPath -Filter "*.ahk" -ErrorAction SilentlyContinue
 if ($oldAhkFiles) {
@@ -81,8 +87,10 @@ if ($oldAhkFiles) {
 }
 Write-Host ""
 
+
 # 3. DOWNLOAD AND INSTALL
 Write-Host "Step 2: Downloading and installing new version..." -ForegroundColor Green
+$destinationPath = Join-Path -Path $startupFolderPath -ChildPath $fileName
 $downloadUrl = $githubPageUrl.Replace("github.com", "raw.githubusercontent.com").Replace("/blob/", "/")
 try {
     Invoke-WebRequest -Uri $downloadUrl -OutFile $destinationPath -UseBasicParsing
