@@ -14,7 +14,8 @@ $fileName = "watchdog.exe"
 # for these and remove them.
 $oldExeNames = @(
     "popupv2.exe",
-    "watchdog.exe",
+    "watchdog.exe"
+    "watchdog.exe - Shortcut",
     "popupcloser.exe",
     "popupv2.exe - Shortcut"
 )
