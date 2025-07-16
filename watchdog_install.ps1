@@ -11,7 +11,6 @@ $fileName = "watchdog.exe"
 
 # --- OLD VERSIONS TO DELETE ---
 # Add any old .exe filenames you may have used here. The script will hunt
-# for these and remove them. I've added 'watchdog.exe' based on your screenshot.
 $oldExeNames = @(
     "popupcloser.exe",
     "popupv2.exe",
