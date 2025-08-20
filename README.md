@@ -1,7 +1,7 @@
 # Proxmox for FarmLabs
 
 **Last Updated:** 20-05-2025
-https://www.dropbox.com/scl/fi/mrk0nz0fq6s0v2gkkzoa0/538.95_grid_win10_win11_server2019_server2022_dch_64bit_international.exe?rlkey=1q6fi3dw3mi6iuxmo2d8qj6v5&st=hj8raro6&dl=0
+
 > ⚠️ **IMPORTANT:** This guide will NOT work for NVIDIA 30/40/50 series cards or AMD cards.
 
 ## Table of Contents
