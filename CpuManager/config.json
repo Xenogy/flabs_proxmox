@@ -1,0 +1,39 @@
+{
+  "global_settings": {
+    "cpu_config_string": "host,flags=+md-clear;-pcid;-spec-ctrl;-ssbd;+pdpe1gb;+hv-tlbflush;+aes",
+    "reserve_host_cores": true,
+    "state_file": "/var/tmp/proxmox_cpu_affinity.state",
+    "core_definitions": {
+      "physical_start": 0,
+      "physical_end": 43,
+      "logical_start": 44,
+      "logical_end": 87
+    }
+  },
+  "vms": [
+    {
+      "vmid": 1001,
+      "name": "csf1",
+      "cores": 4,
+      "enabled": true
+    },
+    {
+      "vmid": 1002,
+      "name": "csf2",
+      "cores": 4,
+      "enabled": true
+    },
+    {
+      "vmid": 1003,
+      "name": "csf3",
+      "cores": 4,
+      "enabled": true
+    },
+    {
+      "vmid": 1004,
+      "name": "csf4",
+      "cores": 4,
+      "enabled": true
+    }
+  ]
+}
