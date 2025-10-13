@@ -1,37 +1,131 @@
 #!/bin/bash
 set -euo pipefail
 
-# =============================================================================
-#
-# Proxmox CPU Manager - A Declarative CPU & NUMA Management Script
-#
-# Author: Your Name/AI Assistant
-# Date:   2023-10-27
-# Version: 9.1 (Corrected State Management & Core Removal)
-#
-# =============================================================================
-
-
 # --- HELPER FUNCTIONS ---
 log() { echo "[INFO] $@"; }
 warn() { echo "[WARN] $@" >&2; }
 error() { echo "[ERROR] $@" >&2; exit 1; }
 
 usage() {
-    echo "Usage: $0 -f <config.json> [-n]"
-    echo "  -f <config.json>: Path to the JSON configuration file. Required."
-    echo "  -n:               Dry run mode. Plan changes but do not execute them. Optional."
+    echo "Usage: $0 -f <config.json> [-n] [-s <hook_script_path>]"
+    echo "  -f <config.json>:      Path to the JSON configuration file. Required."
+    echo "  -n:                    Dry run mode. Plan changes but do not execute them. Optional."
+    echo "  -s <hook_script_path>: Path to hook script for VM isolation. Optional."
+    echo "                         If not specified, no hook script will be attached."
     exit 1
 }
 
 
+
+# =============================================================================
+# --- STATE MANAGEMENT FUNCTIONS ---
+# =============================================================================
+
+create_state_file() {
+    local state_file="manager_state.json"
+    local timestamp=$(date -Iseconds)
+    
+    log "Creating state file: $state_file"
+    
+    # Start building the state JSON
+    cat > "$state_file" << STATEEOF
+{
+  "metadata": {
+    "timestamp": "$timestamp",
+    "version": "9.4",
+    "config_file": "$CONFIG_FILE",
+    "total_vms_configured": ${#VMS_TO_CONFIGURE[@]},
+    "total_cores_requested": $TOTAL_CORES_REQUESTED,
+    "total_phys_available": $TOTAL_PHYS_CORES_AVAILABLE,
+    "total_smt_available": $TOTAL_SMT_CORES_AVAILABLE,
+    "dry_run": $([ $DRY_RUN -eq 1 ] && echo "true" || echo "false")
+  },
+  "topology": {
+    "numa_nodes": [$(IFS=','; echo "${NUMA_NODE_IDS[*]}")],
+    "socket_ids": [$(for socket in "${!SOCKET_IDS[@]}"; do echo -n "$socket,"; done | sed 's/,$//')]
+  },
+  "core_assignments": {
+STATEEOF
+
+    # Add VM assignments
+    local vm_count=0
+    local total_vms=${#VMS_TO_CONFIGURE[@]}
+    
+    for vmid in $(for key in "${!VMS_TO_CONFIGURE[@]}"; do echo "$key"; done | sort -n); do
+        vm_count=$((vm_count + 1))
+        local cpu_count=${VMS_TO_CONFIGURE[$vmid]}
+        local plan=${VM_ASSIGNMENTS[$vmid]}
+        local assigned_cores_str=$(echo "$plan" | sed -n 's/.*cores=\([^:]*\):.*/\1/p')
+        local assigned_node=$(echo "$plan" | sed -n 's/.*node=\(.*\)/\1/p')
+        
+        # Convert cores string to array
+        IFS=',' read -ra assigned_cores_array <<< "$assigned_cores_str"
+        
+        # Get VM name from original config
+        local vm_name=$(jq -r --arg vmid "$vmid" '.vms[] | select(.vmid == ($vmid | tonumber)) | .name' "$CONFIG_FILE")
+        
+        cat >> "$state_file" << VMSTATEEOF
+    "$vmid": {
+      "name": "$vm_name",
+      "cores": $cpu_count,
+      "assigned_physical_cores": [$(IFS=','; echo "${assigned_cores_array[*]}")],
+      "numa_node": $assigned_node,
+      "vcpu_mapping": {
+VMSTATEEOF
+
+        # Create vCPU to physical CPU mapping
+        local vcpu=0
+        for core in "${assigned_cores_array[@]}"; do
+            echo "        \"$vcpu\": $core$([ $vcpu -lt $((cpu_count - 1)) ] && echo "," || echo "")" >> "$state_file"
+            vcpu=$((vcpu + 1))
+        done
+        
+        cat >> "$state_file" << VMSTATEEOF2
+      },
+      "windows_optimization": {
+        "system_vcpus": [0],
+        "game_vcpus": [$(seq -s, 1 $((cpu_count - 1)))]
+      }
+    }$([ $vm_count -lt $total_vms ] && echo "," || echo "")
+VMSTATEEOF2
+    done
+    
+    cat >> "$state_file" << STATEEOF2
+  },
+  "reserved_cores": [$(IFS=','; echo "${CORES_TO_RESERVE[*]:-}")],
+  "available_cores": {
+STATEEOF2
+
+    # Add available cores per node
+    local node_count=0
+    local total_nodes=${#NUMA_NODE_IDS[@]}
+    for node_id in "${NUMA_NODE_IDS[@]}"; do
+        node_count=$((node_count + 1))
+        cat >> "$state_file" << NODESTATEEOF
+    "$node_id": {
+      "remaining_physical": [$(echo "${AVAILABLE_PHYS_CORES[$node_id]}" | tr ' ' ',' | sed 's/,$//' | sed 's/^,//')],
+      "remaining_smt": [$(echo "${AVAILABLE_SMT_CORES[$node_id]}" | tr ' ' ',' | sed 's/,$//' | sed 's/^,//')]
+    }$([ $node_count -lt $total_nodes ] && echo "," || echo "")
+NODESTATEEOF
+    done
+    
+    cat >> "$state_file" << STATEEOF3
+  }
+}
+STATEEOF3
+
+    log "State file created successfully: $state_file"
+}
+
 # --- ARGUMENT PARSING ---
 CONFIG_FILE=""
 DRY_RUN=0
-while getopts "f:nh" opt; do
+HOOK_SCRIPT_PATH=""
+while getopts "f:ns:h" opt; do
     case $opt in
         f) CONFIG_FILE="$OPTARG" ;;
         n) DRY_RUN=1 ;;
+        s) HOOK_SCRIPT_PATH="$OPTARG" ;;
         h) usage ;;
         \?) error "Invalid option: -$OPTARG" ;;
     esac
@@ -46,6 +140,13 @@ for cmd in qm lscpu jq bc; do
     if ! command -v "$cmd" &> /dev/null; then error "Required command '$cmd' not found. Please install it (e.g., 'apt install bc')."; fi
 done
 
+# Hook script validation (only if specified)
+if [[ -n "$HOOK_SCRIPT_PATH" ]]; then
+    log "Hook script specified: $HOOK_SCRIPT_PATH"
+else
+    log "No hook script specified - VMs will be configured without isolation hooks"
+fi
+
 
 # =============================================================================
 # --- PHASE 1: PARSE SETTINGS & BUILD PRIORITIZED CORE POOLS ---
@@ -54,11 +155,44 @@ log "--- PHASE 1: Reading Global Settings & Discovering Host Topology ---"
 
 CPU_CONFIG_STRING=$(jq -r '.global_settings.cpu_config_string' "$CONFIG_FILE")
 RESERVE_HOST_CORES=$(jq -r '.global_settings.reserve_host_cores' "$CONFIG_FILE")
-PHYS_START=$(jq -r '.global_settings.core_definitions.physical_start' "$CONFIG_FILE")
-PHYS_END=$(jq -r '.global_settings.core_definitions.physical_end' "$CONFIG_FILE")
-SMT_START=$(jq -r '.global_settings.core_definitions.logical_start' "$CONFIG_FILE")
-SMT_END=$(jq -r '.global_settings.core_definitions.logical_end' "$CONFIG_FILE")
-HOOK_SCRIPT_PATH="local:snippets/vm-isolation-hook.sh"
+
+# Auto-detect core definitions from system topology
+auto_detect_core_definitions() {
+    log "Auto-detecting core definitions from system topology..."
+    
+    # Get unique core IDs and sort them
+    local unique_cores=($(lscpu -p=CPU,CORE,SOCKET,NODE | grep -v '^#' | awk -F',' '{print $2}' | sort -n | uniq))
+    local total_cores=${#unique_cores[@]}
+    local max_core_id=${unique_cores[$((total_cores - 1))]}
+    
+    # Get total logical CPUs
+    local total_cpus=$(lscpu -p=CPU,CORE,SOCKET,NODE | grep -v '^#' | wc -l)
+    
+    # Physical cores are typically the first half (or first N cores)
+    # SMT cores are the second half (or cores N+1 to total)
+    PHYS_START=0
+    PHYS_END=$max_core_id
+    SMT_START=$((max_core_id + 1))
+    SMT_END=$((total_cpus - 1))
+    
+    log "Auto-detected core definitions:"
+    log "  Physical cores: $PHYS_START to $PHYS_END (total: $((PHYS_END - PHYS_START + 1)))"
+    log "  SMT cores: $SMT_START to $SMT_END (total: $((SMT_END - SMT_START + 1)))"
+    log "  Total logical CPUs: $total_cpus"
+}
+
+# Check if core definitions exist in config, otherwise auto-detect
+if jq -e '.global_settings.core_definitions' "$CONFIG_FILE" > /dev/null 2>&1; then
+    log "Using core definitions from config file..."
+    PHYS_START=$(jq -r '.global_settings.core_definitions.physical_start' "$CONFIG_FILE")
+    PHYS_END=$(jq -r '.global_settings.core_definitions.physical_end' "$CONFIG_FILE")
+    SMT_START=$(jq -r '.global_settings.core_definitions.logical_start' "$CONFIG_FILE")
+    SMT_END=$(jq -r '.global_settings.core_definitions.logical_end' "$CONFIG_FILE")
+    log "Config core definitions: Physical $PHYS_START-$PHYS_END, SMT $SMT_START-$SMT_END"
+else
+    log "No core definitions found in config, auto-detecting..."
+    auto_detect_core_definitions
+fi
 
 declare -A CPU_TO_CORE CPU_TO_NODE CPU_TO_SOCKET SOCKET_IDS MIN_CORE_PER_SOCKET CORES_TO_RESERVE_MAP
 declare -a NUMA_NODE_IDS CORES_TO_RESERVE
@@ -209,6 +343,12 @@ for vmid in $sorted_vmids; do
 done
 
 log "Assignment planning complete."
+
+# =============================================================================
+# --- PHASE 3.5: CREATE STATE FILE ---
+# =============================================================================
+log "--- PHASE 3.5: Creating State File ---"
+create_state_file
 sorted_vmid_keys=$(for key in "${!VM_ASSIGNMENTS[@]}"; do echo "$key"; done | sort -n)
 for vmid in $sorted_vmid_keys; do log "  VM ${vmid} Plan -> ${VM_ASSIGNMENTS[$vmid]}"; done
 
@@ -246,8 +386,13 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
             fi
         done < <(qm config "$vmid" | grep '^net[0-9]\+:' || true)
 
-        log "Attaching host isolation hook script..."
-        qm set "$vmid" --hookscript "$HOOK_SCRIPT_PATH"
+        # Hook script attachment (only if specified)
+        if [[ -n "$HOOK_SCRIPT_PATH" ]]; then
+            log "Attaching host isolation hook script: $HOOK_SCRIPT_PATH"
+            qm set "$vmid" --hookscript "$HOOK_SCRIPT_PATH"
+        else
+            log "Skipping hook script attachment (not specified)"
+        fi
         
         log "Enabling I/O thread on boot disk..."
         boot_disk_device=$(qm config "$vmid" | grep '^boot:' | sed -e 's/.*order=//' -e 's/;.*//' -e 's/(.*)//' || true)
@@ -264,7 +409,11 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
     else
         log "  DRY RUN: Would set cores=${cpu_count}, affinity=${affinity_option}, numa_node=${assigned_node}"
         log "  DRY RUN: Would enable hugepages, disable ballooning, and set virtio NIC queues."
-        log "  DRY RUN: Would attach hook script: ${HOOK_SCRIPT_PATH}"
+        if [[ -n "$HOOK_SCRIPT_PATH" ]]; then
+            log "  DRY RUN: Would attach hook script: ${HOOK_SCRIPT_PATH}"
+        else
+            log "  DRY RUN: Would skip hook script attachment (not specified)"
+        fi
         log "  DRY RUN: Would enable iothread on the boot disk."
         log "--- DRY RUN for VM $vmid COMPLETE ---"
     fi
