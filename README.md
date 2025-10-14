@@ -1,4 +1,3 @@
-https://files.drandex.org/axel/public/vgpu/538.95_grid_win10_win11_server2019_server2022_dch_64bit_international.exe
 # Proxmox for FarmLabs
 
 **Last Updated:** 20-05-2025
