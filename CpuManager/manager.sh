@@ -258,6 +258,7 @@ auto_select_host_cores() {
         IFS=$'\n' sorted_phys_cores=($(sort -n <<<"${node_phys_cores[*]}")); unset IFS
         IFS=$'\n' sorted_smt_cores=($(sort -n <<<"${node_smt_cores[*]}")); unset IFS
         
+        
         # Add the first CORES_PER_NUMA physical cores from this node
         local phys_cores_added=0
         for core in "${sorted_phys_cores[@]}"; do
@@ -318,17 +319,30 @@ auto_detect_core_definitions() {
     log "  Total logical CPUs: $total_cpus"
 }
 
-# Check if core definitions exist in config, otherwise auto-detect
-if jq -e '.global_settings.core_definitions' "$CONFIG_FILE" > /dev/null 2>&1; then
-    log "Using core definitions from config file..."
-    PHYS_START=$(jq -r '.global_settings.core_definitions.physical_start' "$CONFIG_FILE")
-    PHYS_END=$(jq -r '.global_settings.core_definitions.physical_end' "$CONFIG_FILE")
-    SMT_START=$(jq -r '.global_settings.core_definitions.logical_start' "$CONFIG_FILE")
-    SMT_END=$(jq -r '.global_settings.core_definitions.logical_end' "$CONFIG_FILE")
-    log "Config core definitions: Physical $PHYS_START-$PHYS_END, SMT $SMT_START-$SMT_END"
+# Always auto-detect core definitions from actual system topology
+log "Auto-detecting core definitions from system topology..."
+auto_detect_core_definitions
+
+# Update the config file with auto-detected core definitions
+log "Updating config file with auto-detected core definitions..."
+if [[ $DRY_RUN -eq 0 ]]; then
+    # Create a backup of the original config file (if not already created by host cores update)
+    backup_file="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    if [[ ! -f "$backup_file" ]]; then
+        cp "$CONFIG_FILE" "$backup_file"
+        log "  Created backup: $backup_file"
+    fi
+    
+    # Update the core_definitions in the config file
+    core_defs_json="{\"physical_start\":$PHYS_START,\"physical_end\":$PHYS_END,\"logical_start\":$SMT_START,\"logical_end\":$SMT_END}"
+    if jq --argjson core_defs "$core_defs_json" '.global_settings.core_definitions = $core_defs' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"; then
+        mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+        log "  Updated core_definitions in config file: $CONFIG_FILE"
+    else
+        error "Failed to update config file with auto-detected core definitions"
+    fi
 else
-    log "No core definitions found in config, auto-detecting..."
-    auto_detect_core_definitions
+    log "  DRY RUN: Would update core_definitions in config file: $CONFIG_FILE"
 fi
 
 declare -A CPU_TO_CORE CPU_TO_NODE CPU_TO_SOCKET SOCKET_IDS MIN_CORE_PER_SOCKET CORES_TO_RESERVE_MAP
@@ -514,13 +528,14 @@ declare -A CORES_ASSIGNED_PER_NODE
 for node_id in "${NUMA_NODE_IDS[@]}"; do CORES_ASSIGNED_PER_NODE["$node_id"]=0; done
 
 USE_SMT_CORES=true
-PHYSICAL_CORE_RATIO="1.0"
+# Always use balanced SMT core distribution
+# Use a balanced ratio that ensures both physical and SMT cores are used
 if (( TOTAL_CORES_REQUESTED > TOTAL_PHYS_CORES_AVAILABLE )); then
     PHYSICAL_CORE_RATIO=$(echo "scale=4; $TOTAL_PHYS_CORES_AVAILABLE / $TOTAL_CORES_REQUESTED" | bc)
     log "Physical core oversubscription detected. Using Fairness Mode with Physical Core Ratio: ${PHYSICAL_CORE_RATIO}"
 else
-    # Always use SMT cores for balanced distribution
-    PHYSICAL_CORE_RATIO=$(echo "scale=4; $TOTAL_PHYS_CORES_AVAILABLE / $TOTAL_CORES_REQUESTED" | bc)
+    # When there are enough physical cores, use a balanced approach (e.g., 70% physical, 30% SMT)
+    PHYSICAL_CORE_RATIO="0.7"
     log "Using balanced SMT core distribution. Physical Core Ratio: ${PHYSICAL_CORE_RATIO}"
 fi
 
@@ -543,14 +558,19 @@ for vmid in $sorted_vmids; do
     phys_cores_to_take=0; smt_cores_to_take=0
     if [[ "$USE_SMT_CORES" == true ]]; then
         phys_cores_to_take=$(echo "$cpu_count * $PHYSICAL_CORE_RATIO / 1" | bc)
+        # Ensure we don't take more physical cores than available
+        if (( phys_cores_to_take > ${#available_phys_on_node[@]} )); then
+            phys_cores_to_take=${#available_phys_on_node[@]}
+        fi
+        smt_cores_to_take=$(( cpu_count - phys_cores_to_take ))
+        # Ensure SMT cores is not negative
+        if (( smt_cores_to_take < 0 )); then
+            smt_cores_to_take=0
+        fi
     else
         phys_cores_to_take=$cpu_count
+        smt_cores_to_take=0
     fi
-
-    if (( phys_cores_to_take > ${#available_phys_on_node[@]} )); then
-        phys_cores_to_take=${#available_phys_on_node[@]}
-    fi
-    smt_cores_to_take=$(( cpu_count - phys_cores_to_take ))
 
     if (( smt_cores_to_take > ${#available_smt_on_node[@]} )); then
         error "Fatal planning error for VM ${vmid} on node ${target_node}. Not enough SMT cores to make up the difference."
