@@ -12,7 +12,7 @@ usage() {
     echo "  -n:                    Dry run mode. Plan changes but do not execute them. Optional."
     echo "  -s <hook_script_path>: Path to hook script for VM isolation. Optional."
     echo "                         If not specified, no hook script will be attached."
-    echo "  -r:                    Reset host core pinning (allow all cores). Optional."
+    echo "  -r:                    Show commands to reset host core pinning (allow all cores). Optional."
     echo "  -a [N]:                Auto-select first N physical + N SMT core(s) per NUMA node for host pinning. Optional."
     echo "                         If N is not specified, defaults to 1 physical + 1 SMT core per NUMA node."
     exit 1
@@ -185,33 +185,17 @@ fi
 
 # Handle host core pinning reset
 if [[ $RESET_HOST_PINNING -eq 1 ]]; then
-    log "Resetting host core pinning to allow all cores..."
-    if [[ $DRY_RUN -eq 0 ]]; then
-        # Reset system.slice to allow all cores
-        if systemctl set-property system.slice AllowedCPUs="" 2>/dev/null; then
-            log "Successfully reset system.slice to allow all cores"
-        else
-            warn "Failed to reset system.slice AllowedCPUs"
-        fi
-        
-        # Reset user.slice to allow all cores
-        if systemctl set-property user.slice AllowedCPUs="" 2>/dev/null; then
-            log "Successfully reset user.slice to allow all cores"
-        else
-            warn "Failed to reset user.slice AllowedCPUs"
-        fi
-        
-        # Reset init.scope to allow all cores
-        if systemctl set-property init.scope AllowedCPUs="" 2>/dev/null; then
-            log "Successfully reset init.scope to allow all cores"
-        else
-            warn "Failed to reset init.scope AllowedCPUs"
-        fi
-    else
-        log "  DRY RUN: Would reset system.slice to allow all cores"
-        log "  DRY RUN: Would reset user.slice to allow all cores"
-        log "  DRY RUN: Would reset init.scope to allow all cores"
-    fi
+    log "Host core pinning reset commands (run these manually as root):"
+    echo ""
+    echo "  # Reset system.slice to allow all cores"
+    echo "  systemctl set-property system.slice AllowedCPUs=\"\""
+    echo ""
+    echo "  # Reset user.slice to allow all cores"
+    echo "  systemctl set-property user.slice AllowedCPUs=\"\""
+    echo ""
+    echo "  # Reset init.scope to allow all cores"
+    echo "  systemctl set-property init.scope AllowedCPUs=\"\""
+    echo ""
     log "Host core pinning reset complete."
     exit 0
 fi
@@ -439,37 +423,26 @@ if [[ "$RESERVE_HOST_CORES" == "true" ]]; then
         log "Auto-detected CPUs reserved for host: ${CORES_TO_RESERVE[*]}"
     fi
     
-    # Apply host core pinning using systemd cgroups
+    # Provide host core pinning commands for manual execution
     if [[ ${#CORES_TO_RESERVE[@]} -gt 0 ]]; then
-        log "Applying host core pinning using systemd cgroups..."
         host_cores_string=$(IFS=' '; echo "${CORES_TO_RESERVE[*]}")
         
-        if [[ $DRY_RUN -eq 0 ]]; then
-            # Set system.slice to only use reserved cores
-            if systemctl set-property system.slice AllowedCPUs="$host_cores_string"; then
-                log "Successfully pinned system.slice to cores: $host_cores_string"
-            else
-                warn "Failed to set system.slice AllowedCPUs. Host processes may use any core."
-            fi
-            
-            # Set user.slice to only use reserved cores (for user processes)
-            if systemctl set-property user.slice AllowedCPUs="$host_cores_string"; then
-                log "Successfully pinned user.slice to cores: $host_cores_string"
-            else
-                warn "Failed to set user.slice AllowedCPUs. User processes may use any core."
-            fi
-            
-            # Set init.scope to only use reserved cores (for init processes)
-            if systemctl set-property init.scope AllowedCPUs="$host_cores_string"; then
-                log "Successfully pinned init.scope to cores: $host_cores_string"
-            else
-                warn "Failed to set init.scope AllowedCPUs. Init processes may use any core."
-            fi
-        else
-            log "  DRY RUN: Would pin system.slice to cores: $host_cores_string"
-            log "  DRY RUN: Would pin user.slice to cores: $host_cores_string"
-            log "  DRY RUN: Would pin init.scope to cores: $host_cores_string"
-        fi
+        log "Host core pinning commands (run these manually as root):"
+        echo ""
+        echo "  # Pin system.slice to reserved cores"
+        echo "  systemctl set-property system.slice AllowedCPUs=\"$host_cores_string\""
+        echo ""
+        echo "  # Pin user.slice to reserved cores"
+        echo "  systemctl set-property user.slice AllowedCPUs=\"$host_cores_string\""
+        echo ""
+        echo "  # Pin init.scope to reserved cores"
+        echo "  systemctl set-property init.scope AllowedCPUs=\"$host_cores_string\""
+        echo ""
+        echo "  # To reset host pinning (allow all cores):"
+        echo "  systemctl set-property system.slice AllowedCPUs=\"\""
+        echo "  systemctl set-property user.slice AllowedCPUs=\"\""
+        echo "  systemctl set-property init.scope AllowedCPUs=\"\""
+        echo ""
     fi
 fi
 
