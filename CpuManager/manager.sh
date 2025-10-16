@@ -7,11 +7,14 @@ warn() { echo "[WARN] $@" >&2; }
 error() { echo "[ERROR] $@" >&2; exit 1; }
 
 usage() {
-    echo "Usage: $0 -f <config.json> [-n] [-s <hook_script_path>]"
+    echo "Usage: $0 -f <config.json> [-n] [-s <hook_script_path>] [-r] [-a [N]]"
     echo "  -f <config.json>:      Path to the JSON configuration file. Required."
     echo "  -n:                    Dry run mode. Plan changes but do not execute them. Optional."
     echo "  -s <hook_script_path>: Path to hook script for VM isolation. Optional."
     echo "                         If not specified, no hook script will be attached."
+    echo "  -r:                    Reset host core pinning (allow all cores). Optional."
+    echo "  -a [N]:                Auto-select first N physical + N SMT core(s) per NUMA node for host pinning. Optional."
+    echo "                         If N is not specified, defaults to 1 physical + 1 SMT core per NUMA node."
     exit 1
 }
 
@@ -32,7 +35,7 @@ create_state_file() {
 {
   "metadata": {
     "timestamp": "$timestamp",
-    "version": "9.4",
+    "version": "9.7",
     "config_file": "$CONFIG_FILE",
     "total_vms_configured": ${#VMS_TO_CONFIGURE[@]},
     "total_cores_requested": $TOTAL_CORES_REQUESTED,
@@ -121,13 +124,46 @@ STATEEOF3
 CONFIG_FILE=""
 DRY_RUN=0
 HOOK_SCRIPT_PATH=""
-while getopts "f:ns:h" opt; do
-    case $opt in
-        f) CONFIG_FILE="$OPTARG" ;;
-        n) DRY_RUN=1 ;;
-        s) HOOK_SCRIPT_PATH="$OPTARG" ;;
-        h) usage ;;
-        \?) error "Invalid option: -$OPTARG" ;;
+RESET_HOST_PINNING=0
+AUTO_HOST_CORES=0
+CORES_PER_NUMA=1  # Default to 1 core per NUMA node
+
+# Handle all arguments manually to support optional argument for -a
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -f|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        -n|--dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        -s|--hook-script)
+            HOOK_SCRIPT_PATH="$2"
+            shift 2
+            ;;
+        -r|--reset-host-pinning)
+            RESET_HOST_PINNING=1
+            shift
+            ;;
+        -a|--auto-host-cores)
+            AUTO_HOST_CORES=1
+            # Check if next argument is a number
+            if [[ $# -gt 1 && "$2" =~ ^[0-9]+$ ]]; then
+                CORES_PER_NUMA="$2"
+                shift 2
+            else
+                shift
+            fi
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            error "Unknown option: $1"
+            ;;
     esac
 done
 
@@ -147,6 +183,39 @@ else
     log "No hook script specified - VMs will be configured without isolation hooks"
 fi
 
+# Handle host core pinning reset
+if [[ $RESET_HOST_PINNING -eq 1 ]]; then
+    log "Resetting host core pinning to allow all cores..."
+    if [[ $DRY_RUN -eq 0 ]]; then
+        # Reset system.slice to allow all cores
+        if systemctl set-property system.slice AllowedCPUs="" 2>/dev/null; then
+            log "Successfully reset system.slice to allow all cores"
+        else
+            warn "Failed to reset system.slice AllowedCPUs"
+        fi
+        
+        # Reset user.slice to allow all cores
+        if systemctl set-property user.slice AllowedCPUs="" 2>/dev/null; then
+            log "Successfully reset user.slice to allow all cores"
+        else
+            warn "Failed to reset user.slice AllowedCPUs"
+        fi
+        
+        # Reset init.scope to allow all cores
+        if systemctl set-property init.scope AllowedCPUs="" 2>/dev/null; then
+            log "Successfully reset init.scope to allow all cores"
+        else
+            warn "Failed to reset init.scope AllowedCPUs"
+        fi
+    else
+        log "  DRY RUN: Would reset system.slice to allow all cores"
+        log "  DRY RUN: Would reset user.slice to allow all cores"
+        log "  DRY RUN: Would reset init.scope to allow all cores"
+    fi
+    log "Host core pinning reset complete."
+    exit 0
+fi
+
 
 # =============================================================================
 # --- PHASE 1: PARSE SETTINGS & BUILD PRIORITIZED CORE POOLS ---
@@ -155,6 +224,74 @@ log "--- PHASE 1: Reading Global Settings & Discovering Host Topology ---"
 
 CPU_CONFIG_STRING=$(jq -r '.global_settings.cpu_config_string' "$CONFIG_FILE")
 RESERVE_HOST_CORES=$(jq -r '.global_settings.reserve_host_cores' "$CONFIG_FILE")
+
+# Read host cores configuration
+HOST_CORES_JSON=$(jq -r '.global_settings.host_cores // []' "$CONFIG_FILE")
+if [[ "$HOST_CORES_JSON" == "[]" || "$HOST_CORES_JSON" == "null" ]]; then
+    HOST_CORES_JSON=""
+fi
+
+# Auto-select first core per NUMA node function
+auto_select_host_cores() {
+    # Use the already-parsed topology data
+    local auto_host_cores=()
+    
+    for node_id in "${NUMA_NODE_IDS[@]}"; do
+        # Collect physical and SMT cores separately for this NUMA node
+        local node_phys_cores=()
+        local node_smt_cores=()
+        
+        # Look through all CPUs to find cores for this node
+        for cpu_id in $(seq 0 $SMT_END); do
+            if [[ -v CPU_TO_NODE["$cpu_id"] && "${CPU_TO_NODE[$cpu_id]}" == "$node_id" ]]; then
+                # Check if it's a physical core (within PHYS_START to PHYS_END)
+                if (( cpu_id >= PHYS_START && cpu_id <= PHYS_END )); then
+                    node_phys_cores+=("$cpu_id")
+                # Check if it's an SMT core (within SMT_START to SMT_END)
+                elif (( cpu_id >= SMT_START && cpu_id <= SMT_END )); then
+                    node_smt_cores+=("$cpu_id")
+                fi
+            fi
+        done
+        
+        # Sort cores numerically
+        IFS=$'\n' sorted_phys_cores=($(sort -n <<<"${node_phys_cores[*]}")); unset IFS
+        IFS=$'\n' sorted_smt_cores=($(sort -n <<<"${node_smt_cores[*]}")); unset IFS
+        
+        # Add the first CORES_PER_NUMA physical cores from this node
+        local phys_cores_added=0
+        for core in "${sorted_phys_cores[@]}"; do
+            if (( phys_cores_added < CORES_PER_NUMA )); then
+                auto_host_cores+=("$core")
+                phys_cores_added=$((phys_cores_added + 1))
+            fi
+        done
+        
+        # Add the first CORES_PER_NUMA SMT cores from this node
+        local smt_cores_added=0
+        for core in "${sorted_smt_cores[@]}"; do
+            if (( smt_cores_added < CORES_PER_NUMA )); then
+                auto_host_cores+=("$core")
+                smt_cores_added=$((smt_cores_added + 1))
+            fi
+        done
+    done
+    
+    # Convert array to JSON format
+    local json_cores="["
+    local first=true
+    for core in "${auto_host_cores[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            json_cores+="$core"
+            first=false
+        else
+            json_cores+=",$core"
+        fi
+    done
+    json_cores+="]"
+    
+    echo "$json_cores"
+}
 
 # Auto-detect core definitions from system topology
 auto_detect_core_definitions() {
@@ -212,18 +349,114 @@ while IFS= read -r line; do
 done <<< "$lscpu_output"
 IFS=$'\n' NUMA_NODE_IDS=($(sort -n <<<"${NUMA_NODE_IDS[*]}")); unset IFS
 
+# Check if auto-selection is requested (after topology discovery)
+if [[ $AUTO_HOST_CORES -eq 1 ]]; then
+    log "Auto-selection requested, overriding config host_cores..."
+    log "Auto-selecting first $CORES_PER_NUMA physical + $CORES_PER_NUMA SMT core(s) per NUMA node for host pinning..."
+    HOST_CORES_JSON=$(auto_select_host_cores)
+    log "Auto-selected host cores: $HOST_CORES_JSON"
+    
+    # Update the config file with the auto-selected cores
+    log "Updating config file with auto-selected host cores..."
+    if [[ $DRY_RUN -eq 0 ]]; then
+        # Create a backup of the original config file
+        cp "$CONFIG_FILE" "${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+        log "  Created backup: ${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+        
+        # Update the host_cores in the config file
+        if jq --argjson host_cores "$HOST_CORES_JSON" '.global_settings.host_cores = $host_cores' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"; then
+            mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+            log "  Updated host_cores in config file: $CONFIG_FILE"
+        else
+            error "Failed to update config file with auto-selected host cores"
+        fi
+    else
+        log "  DRY RUN: Would update host_cores in config file: $CONFIG_FILE"
+        log "  DRY RUN: Would create backup: ${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    # Log the selected cores for clarity
+    while IFS= read -r core_id; do
+        if [[ "$core_id" =~ ^[0-9]+$ ]]; then
+            # Find which NUMA node this core belongs to
+            node_id=""
+            for cpu in $(seq 0 $SMT_END); do
+                if [[ -v CPU_TO_NODE["$cpu"] && "$cpu" == "$core_id" ]]; then
+                    node_id=${CPU_TO_NODE["$cpu"]}
+                    break
+                fi
+            done
+            log "  NUMA node $node_id: Selected core $core_id"
+        fi
+    done < <(echo "$HOST_CORES_JSON" | jq -r '.[]')
+fi
+
 if [[ "$RESERVE_HOST_CORES" == "true" ]]; then
-    log "Reserving first physical core of each socket for the host OS..."
-    for socket_id in "${!SOCKET_IDS[@]}"; do
-        min_core_id=${MIN_CORE_PER_SOCKET["$socket_id"]}
-        log "  Socket $socket_id: Reserving physical core $min_core_id."
-        for cpu_id in $(seq 0 $SMT_END); do
-            if [[ -v CPU_TO_SOCKET["$cpu_id"] && "${CPU_TO_SOCKET[$cpu_id]}" == "$socket_id" && "${CPU_TO_CORE[$cpu_id]}" == "$min_core_id" ]]; then
-                CORES_TO_RESERVE+=("$cpu_id"); CORES_TO_RESERVE_MAP["$cpu_id"]=1
+    
+    if [[ -n "$HOST_CORES_JSON" ]]; then
+        log "Reserving configured host cores from config file..."
+        # Parse the JSON array and add each core to the reservation list
+        while IFS= read -r core_id; do
+            if [[ "$core_id" =~ ^[0-9]+$ ]]; then
+                # Validate core ID is within system range
+                if (( core_id >= 0 && core_id <= SMT_END )); then
+                    CORES_TO_RESERVE+=("$core_id")
+                    CORES_TO_RESERVE_MAP["$core_id"]=1
+                    log "  Reserving CPU $core_id for host OS"
+                else
+                    error "Host core ID $core_id is out of range (0-$SMT_END). Please check your configuration."
+                fi
+            else
+                error "Invalid host core ID in config: $core_id (must be numeric)"
             fi
+        done < <(echo "$HOST_CORES_JSON" | jq -r '.[]')
+        log "Configured CPUs reserved for host: ${CORES_TO_RESERVE[*]}"
+    else
+        log "No host_cores configured, auto-detecting first physical core of each socket..."
+        for socket_id in "${!SOCKET_IDS[@]}"; do
+            min_core_id=${MIN_CORE_PER_SOCKET["$socket_id"]}
+            log "  Socket $socket_id: Reserving physical core $min_core_id."
+            for cpu_id in $(seq 0 $SMT_END); do
+                if [[ -v CPU_TO_SOCKET["$cpu_id"] && "${CPU_TO_SOCKET[$cpu_id]}" == "$socket_id" && "${CPU_TO_CORE[$cpu_id]}" == "$min_core_id" ]]; then
+                    CORES_TO_RESERVE+=("$cpu_id"); CORES_TO_RESERVE_MAP["$cpu_id"]=1
+                fi
+            done
         done
-    done
-    log "Logical CPUs reserved for host: ${CORES_TO_RESERVE[*]}"
+        log "Auto-detected CPUs reserved for host: ${CORES_TO_RESERVE[*]}"
+    fi
+    
+    # Apply host core pinning using systemd cgroups
+    if [[ ${#CORES_TO_RESERVE[@]} -gt 0 ]]; then
+        log "Applying host core pinning using systemd cgroups..."
+        host_cores_string=$(IFS=' '; echo "${CORES_TO_RESERVE[*]}")
+        
+        if [[ $DRY_RUN -eq 0 ]]; then
+            # Set system.slice to only use reserved cores
+            if systemctl set-property system.slice AllowedCPUs="$host_cores_string"; then
+                log "Successfully pinned system.slice to cores: $host_cores_string"
+            else
+                warn "Failed to set system.slice AllowedCPUs. Host processes may use any core."
+            fi
+            
+            # Set user.slice to only use reserved cores (for user processes)
+            if systemctl set-property user.slice AllowedCPUs="$host_cores_string"; then
+                log "Successfully pinned user.slice to cores: $host_cores_string"
+            else
+                warn "Failed to set user.slice AllowedCPUs. User processes may use any core."
+            fi
+            
+            # Set init.scope to only use reserved cores (for init processes)
+            if systemctl set-property init.scope AllowedCPUs="$host_cores_string"; then
+                log "Successfully pinned init.scope to cores: $host_cores_string"
+            else
+                warn "Failed to set init.scope AllowedCPUs. Init processes may use any core."
+            fi
+        else
+            log "  DRY RUN: Would pin system.slice to cores: $host_cores_string"
+            log "  DRY RUN: Would pin user.slice to cores: $host_cores_string"
+            log "  DRY RUN: Would pin init.scope to cores: $host_cores_string"
+        fi
+    fi
 fi
 
 declare -A AVAILABLE_PHYS_CORES AVAILABLE_SMT_CORES
