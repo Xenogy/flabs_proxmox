@@ -513,14 +513,15 @@ declare -A VM_ASSIGNMENTS
 declare -A CORES_ASSIGNED_PER_NODE
 for node_id in "${NUMA_NODE_IDS[@]}"; do CORES_ASSIGNED_PER_NODE["$node_id"]=0; done
 
-USE_SMT_CORES=false
+USE_SMT_CORES=true
 PHYSICAL_CORE_RATIO="1.0"
 if (( TOTAL_CORES_REQUESTED > TOTAL_PHYS_CORES_AVAILABLE )); then
-    USE_SMT_CORES=true
     PHYSICAL_CORE_RATIO=$(echo "scale=4; $TOTAL_PHYS_CORES_AVAILABLE / $TOTAL_CORES_REQUESTED" | bc)
     log "Physical core oversubscription detected. Using Fairness Mode with Physical Core Ratio: ${PHYSICAL_CORE_RATIO}"
 else
-    log "Sufficient physical cores are available. SMT cores will only be used if a single large VM requires them."
+    # Always use SMT cores for balanced distribution
+    PHYSICAL_CORE_RATIO=$(echo "scale=4; $TOTAL_PHYS_CORES_AVAILABLE / $TOTAL_CORES_REQUESTED" | bc)
+    log "Using balanced SMT core distribution. Physical Core Ratio: ${PHYSICAL_CORE_RATIO}"
 fi
 
 sorted_vmids=$(for vmid in "${!VMS_TO_CONFIGURE[@]}"; do echo "${VMS_TO_CONFIGURE[$vmid]} $vmid"; done | sort -rn | awk '{print $2}')
