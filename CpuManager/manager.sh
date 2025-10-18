@@ -501,15 +501,14 @@ declare -A CORES_ASSIGNED_PER_NODE
 for node_id in "${NUMA_NODE_IDS[@]}"; do CORES_ASSIGNED_PER_NODE["$node_id"]=0; done
 
 USE_SMT_CORES=true
-# Always use balanced SMT core distribution
-# Use a balanced ratio that ensures both physical and SMT cores are used
+# Only use SMT cores when physical cores are exhausted
 if (( TOTAL_CORES_REQUESTED > TOTAL_PHYS_CORES_AVAILABLE )); then
     PHYSICAL_CORE_RATIO=$(echo "scale=4; $TOTAL_PHYS_CORES_AVAILABLE / $TOTAL_CORES_REQUESTED" | bc)
     log "Physical core oversubscription detected. Using Fairness Mode with Physical Core Ratio: ${PHYSICAL_CORE_RATIO}"
 else
-    # When there are enough physical cores, use a balanced approach (e.g., 70% physical, 30% SMT)
-    PHYSICAL_CORE_RATIO="0.7"
-    log "Using balanced SMT core distribution. Physical Core Ratio: ${PHYSICAL_CORE_RATIO}"
+    # When there are enough physical cores, use ONLY physical cores
+    PHYSICAL_CORE_RATIO="1.0"
+    log "Sufficient physical cores available. Using only physical cores (ratio: ${PHYSICAL_CORE_RATIO})"
 fi
 
 sorted_vmids=$(for vmid in "${!VMS_TO_CONFIGURE[@]}"; do echo "${VMS_TO_CONFIGURE[$vmid]} $vmid"; done | sort -rn | awk '{print $2}')
@@ -626,10 +625,15 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
         if [[ -n "$boot_disk_device" ]]; then
             disk_config_line=$(qm config "$vmid" | grep "^${boot_disk_device}:" || true)
             if [[ -n "$disk_config_line" && "$disk_config_line" != *"iothread=1"* ]]; then
-                disk_storage_path=$(echo "$disk_config_line" | awk -F': ' '{print $2}' | cut -d',' -f1)
-                all_disk_options=$(echo "$disk_config_line" | awk -F': ' '{print $2}' | cut -d',' -f2-)
-                final_disk_options="${all_disk_options},iothread=1"
-                qm set "$vmid" -"$boot_disk_device" "${disk_storage_path},${final_disk_options}"
+                # Check if this is a storage device (not CD/DVD)
+                if [[ "$disk_config_line" =~ (scsi|virtio|sata|ide):.*\.(qcow2|raw|vmdk|vdi) ]]; then
+                    disk_storage_path=$(echo "$disk_config_line" | awk -F': ' '{print $2}' | cut -d',' -f1)
+                    all_disk_options=$(echo "$disk_config_line" | awk -F': ' '{print $2}' | cut -d',' -f2-)
+                    final_disk_options="${all_disk_options},iothread=1"
+                    qm set "$vmid" -"$boot_disk_device" "${disk_storage_path},${final_disk_options}"
+                else
+                    log "  Skipping I/O thread for non-storage device: $boot_disk_device"
+                fi
             fi
         fi
         log "--- Configuration for VM $vmid COMPLETE ---"
@@ -641,7 +645,7 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
         else
             log "  DRY RUN: Would skip hook script attachment (not specified)"
         fi
-        log "  DRY RUN: Would enable iothread on the boot disk."
+        log "  DRY RUN: Would enable iothread on the boot disk (if it's a storage device)."
         log "--- DRY RUN for VM $vmid COMPLETE ---"
     fi
 done
