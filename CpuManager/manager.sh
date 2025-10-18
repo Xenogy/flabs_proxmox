@@ -64,8 +64,8 @@ STATEEOF
         # Convert cores string to array
         IFS=',' read -ra assigned_cores_array <<< "$assigned_cores_str"
         
-        # Get VM name from original config
-        local vm_name=$(jq -r --arg vmid "$vmid" '.vms[] | select(.vmid == ($vmid | tonumber)) | .name' "$CONFIG_FILE")
+        # Generate VM name from VMID (since names aren't in the streamlined format)
+        local vm_name="vm-${vmid}"
         
         cat >> "$state_file" << VMSTATEEOF
     "$vmid": {
@@ -476,17 +476,17 @@ log "--- PHASE 2: Reading and Validating VM Configurations ---"
 declare -A VMS_TO_CONFIGURE
 TOTAL_CORES_REQUESTED=0
 
-while IFS= read -r json_object; do
-    [[ -z "$json_object" ]] && continue
-    vmid=$(jq -r '.vmid' <<< "$json_object"); cores=$(jq -r '.cores' <<< "$json_object"); name=$(jq -r '.name' <<< "$json_object")
+# Parse VMs from the new streamlined format
+for vmid in $(jq -r '.vms | keys[]' "$CONFIG_FILE"); do
+    cores=$(jq -r --arg vmid "$vmid" '.vms[$vmid]' "$CONFIG_FILE")
     if ! [[ "$vmid" =~ ^[0-9]+$ && "$cores" =~ ^[1-9][0-9]*$ ]]; then
-        error "Invalid VM entry in JSON for '${name}'. VMID and Cores must be positive integers."
+        error "Invalid VM entry in JSON for VMID '${vmid}'. VMID and Cores must be positive integers."
     fi
-    log "  Found enabled VM: ${name} (VMID: ${vmid}), requesting ${cores} cores."
+    log "  Found VM: VMID ${vmid}, requesting ${cores} cores."
     VMS_TO_CONFIGURE["$vmid"]="$cores"; TOTAL_CORES_REQUESTED=$((TOTAL_CORES_REQUESTED + cores))
-done < <(jq -c '.vms[] | select(.enabled == true)' "$CONFIG_FILE")
+done
 
-if [[ ${#VMS_TO_CONFIGURE[@]} -eq 0 ]]; then error "No VMs with 'enabled: true' found in config."; fi
+if [[ ${#VMS_TO_CONFIGURE[@]} -eq 0 ]]; then error "No VMs found in config."; fi
 if (( TOTAL_CORES_REQUESTED > (TOTAL_PHYS_CORES_AVAILABLE + TOTAL_SMT_CORES_AVAILABLE) )); then
     error "Resource overdraft: Requested cores ($TOTAL_CORES_REQUESTED) exceed total available ($((TOTAL_PHYS_CORES_AVAILABLE + TOTAL_SMT_CORES_AVAILABLE)))."
 fi
