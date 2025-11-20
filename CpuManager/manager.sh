@@ -27,9 +27,9 @@ usage() {
 create_state_file() {
     local state_file="manager_state.json"
     local timestamp=$(date -Iseconds)
-    
+
     log "Creating state file: $state_file"
-    
+
     # Start building the state JSON
     cat > "$state_file" << STATEEOF
 {
@@ -53,20 +53,20 @@ STATEEOF
     # Add VM assignments
     local vm_count=0
     local total_vms=${#VMS_TO_CONFIGURE[@]}
-    
+
     for vmid in $(for key in "${!VMS_TO_CONFIGURE[@]}"; do echo "$key"; done | sort -n); do
         vm_count=$((vm_count + 1))
         local cpu_count=${VMS_TO_CONFIGURE[$vmid]}
         local plan=${VM_ASSIGNMENTS[$vmid]}
         local assigned_cores_str=$(echo "$plan" | sed -n 's/.*cores=\([^:]*\):.*/\1/p')
         local assigned_node=$(echo "$plan" | sed -n 's/.*node=\(.*\)/\1/p')
-        
+
         # Convert cores string to array
         IFS=',' read -ra assigned_cores_array <<< "$assigned_cores_str"
-        
+
         # Generate VM name from VMID (since names aren't in the streamlined format)
         local vm_name="vm-${vmid}"
-        
+
         cat >> "$state_file" << VMSTATEEOF
     "$vmid": {
       "name": "$vm_name",
@@ -82,7 +82,7 @@ VMSTATEEOF
             echo "        \"$vcpu\": $core$([ $vcpu -lt $((cpu_count - 1)) ] && echo "," || echo "")" >> "$state_file"
             vcpu=$((vcpu + 1))
         done
-        
+
         cat >> "$state_file" << VMSTATEEOF2
       },
       "windows_optimization": {
@@ -92,7 +92,7 @@ VMSTATEEOF
     }$([ $vm_count -lt $total_vms ] && echo "," || echo "")
 VMSTATEEOF2
     done
-    
+
     cat >> "$state_file" << STATEEOF2
   },
   "reserved_cores": [$(IFS=','; echo "${CORES_TO_RESERVE[*]:-}")],
@@ -111,7 +111,7 @@ STATEEOF2
     }$([ $node_count -lt $total_nodes ] && echo "," || echo "")
 NODESTATEEOF
     done
-    
+
     cat >> "$state_file" << STATEEOF3
   }
 }
@@ -219,12 +219,12 @@ fi
 auto_select_host_cores() {
     # Use the already-parsed topology data
     local auto_host_cores=()
-    
+
     for node_id in "${NUMA_NODE_IDS[@]}"; do
         # Collect physical and SMT cores separately for this NUMA node
         local node_phys_cores=()
         local node_smt_cores=()
-        
+
         # Look through all CPUs to find cores for this node
         for cpu_id in $(seq 0 $SMT_END); do
             if [[ -v CPU_TO_NODE["$cpu_id"] && "${CPU_TO_NODE[$cpu_id]}" == "$node_id" ]]; then
@@ -237,12 +237,12 @@ auto_select_host_cores() {
                 fi
             fi
         done
-        
+
         # Sort cores numerically
         IFS=$'\n' sorted_phys_cores=($(sort -n <<<"${node_phys_cores[*]}")); unset IFS
         IFS=$'\n' sorted_smt_cores=($(sort -n <<<"${node_smt_cores[*]}")); unset IFS
-        
-        
+
+
         # Add the first CORES_PER_NUMA physical cores from this node
         local phys_cores_added=0
         for core in "${sorted_phys_cores[@]}"; do
@@ -251,7 +251,7 @@ auto_select_host_cores() {
                 phys_cores_added=$((phys_cores_added + 1))
             fi
         done
-        
+
         # Add the first CORES_PER_NUMA SMT cores from this node
         local smt_cores_added=0
         for core in "${sorted_smt_cores[@]}"; do
@@ -261,7 +261,7 @@ auto_select_host_cores() {
             fi
         done
     done
-    
+
     # Convert array to JSON format
     local json_cores="["
     local first=true
@@ -274,29 +274,29 @@ auto_select_host_cores() {
         fi
     done
     json_cores+="]"
-    
+
     echo "$json_cores"
 }
 
 # Auto-detect core definitions from system topology
 auto_detect_core_definitions() {
     log "Auto-detecting core definitions from system topology..."
-    
+
     # Get unique core IDs and sort them
     local unique_cores=($(lscpu -p=CPU,CORE,SOCKET,NODE | grep -v '^#' | awk -F',' '{print $2}' | sort -n | uniq))
     local total_cores=${#unique_cores[@]}
     local max_core_id=${unique_cores[$((total_cores - 1))]}
-    
+
     # Get total logical CPUs
     local total_cpus=$(lscpu -p=CPU,CORE,SOCKET,NODE | grep -v '^#' | wc -l)
-    
+
     # Physical cores are typically the first half (or first N cores)
     # SMT cores are the second half (or cores N+1 to total)
     PHYS_START=0
     PHYS_END=$max_core_id
     SMT_START=$((max_core_id + 1))
     SMT_END=$((total_cpus - 1))
-    
+
     log "Auto-detected core definitions:"
     log "  Physical cores: $PHYS_START to $PHYS_END (total: $((PHYS_END - PHYS_START + 1)))"
     log "  SMT cores: $SMT_START to $SMT_END (total: $((SMT_END - SMT_START + 1)))"
@@ -316,7 +316,7 @@ if [[ $DRY_RUN -eq 0 ]]; then
         cp "$CONFIG_FILE" "$backup_file"
         log "  Created backup: $backup_file"
     fi
-    
+
     # Update the core_definitions in the config file
     core_defs_json="{\"physical_start\":$PHYS_START,\"physical_end\":$PHYS_END,\"logical_start\":$SMT_START,\"logical_end\":$SMT_END}"
     if jq --argjson core_defs "$core_defs_json" '.global_settings.core_definitions = $core_defs' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"; then
@@ -353,14 +353,14 @@ if [[ $AUTO_HOST_CORES -eq 1 ]]; then
     log "Auto-selecting first $CORES_PER_NUMA physical + $CORES_PER_NUMA SMT core(s) per NUMA node for host pinning..."
     HOST_CORES_JSON=$(auto_select_host_cores)
     log "Auto-selected host cores: $HOST_CORES_JSON"
-    
+
     # Update the config file with the auto-selected cores
     log "Updating config file with auto-selected host cores..."
     if [[ $DRY_RUN -eq 0 ]]; then
         # Create a backup of the original config file
         cp "$CONFIG_FILE" "${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
         log "  Created backup: ${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-        
+
         # Update the host_cores in the config file
         if jq --argjson host_cores "$HOST_CORES_JSON" '.global_settings.host_cores = $host_cores' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"; then
             mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
@@ -372,7 +372,7 @@ if [[ $AUTO_HOST_CORES -eq 1 ]]; then
         log "  DRY RUN: Would update host_cores in config file: $CONFIG_FILE"
         log "  DRY RUN: Would create backup: ${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
     fi
-    
+
     # Log the selected cores for clarity
     while IFS= read -r core_id; do
         if [[ "$core_id" =~ ^[0-9]+$ ]]; then
@@ -390,7 +390,7 @@ if [[ $AUTO_HOST_CORES -eq 1 ]]; then
 fi
 
 if [[ "$RESERVE_HOST_CORES" == "true" ]]; then
-    
+
     if [[ -n "$HOST_CORES_JSON" ]]; then
         log "Reserving configured host cores from config file..."
         # Parse the JSON array and add each core to the reservation list
@@ -422,11 +422,11 @@ if [[ "$RESERVE_HOST_CORES" == "true" ]]; then
         done
         log "Auto-detected CPUs reserved for host: ${CORES_TO_RESERVE[*]}"
     fi
-    
+
     # Provide host core pinning commands for manual execution
     if [[ ${#CORES_TO_RESERVE[@]} -gt 0 ]]; then
         host_cores_string=$(IFS=' '; echo "${CORES_TO_RESERVE[*]}")
-        
+
         log "Host core pinning commands (run these manually as root):"
         echo ""
         echo "  # Pin system.slice to reserved cores"
@@ -515,7 +515,7 @@ sorted_vmids=$(for vmid in "${!VMS_TO_CONFIGURE[@]}"; do echo "${VMS_TO_CONFIGUR
 
 for vmid in $sorted_vmids; do
     cpu_count=${VMS_TO_CONFIGURE[$vmid]}
-    
+
     min_load=${CORES_ASSIGNED_PER_NODE[${NUMA_NODE_IDS[0]}]}
     target_node=${NUMA_NODE_IDS[0]}
     for node_id in "${NUMA_NODE_IDS[@]:1}"; do
@@ -523,10 +523,10 @@ for vmid in $sorted_vmids; do
             min_load=${CORES_ASSIGNED_PER_NODE[$node_id]}; target_node=$node_id
         fi
     done
-    
+
     available_phys_on_node=(${AVAILABLE_PHYS_CORES["$target_node"]:-})
     available_smt_on_node=(${AVAILABLE_SMT_CORES["$target_node"]:-})
-    
+
     phys_cores_to_take=0; smt_cores_to_take=0
     if [[ "$USE_SMT_CORES" == true ]]; then
         phys_cores_to_take=$(echo "$cpu_count * $PHYSICAL_CORE_RATIO / 1" | bc)
@@ -547,12 +547,12 @@ for vmid in $sorted_vmids; do
     if (( smt_cores_to_take > ${#available_smt_on_node[@]} )); then
         error "Fatal planning error for VM ${vmid} on node ${target_node}. Not enough SMT cores to make up the difference."
     fi
-    
+
     log "  VM ${vmid} on Node ${target_node} will be assigned: ${phys_cores_to_take} Physical, ${smt_cores_to_take} SMT"
 
     cores_to_assign_list=( "${available_phys_on_node[@]:0:$phys_cores_to_take}" )
     cores_to_assign_list+=( "${available_smt_on_node[@]:0:$smt_cores_to_take}" )
-    
+
     VM_ASSIGNMENTS["$vmid"]="cores=$(IFS=,; echo "${cores_to_assign_list[*]}"):node=${target_node}"
 
     CORES_ASSIGNED_PER_NODE["$target_node"]=$(( ${CORES_ASSIGNED_PER_NODE[$target_node]} + cpu_count ))
@@ -591,17 +591,17 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
     plan=${VM_ASSIGNMENTS[$vmid]}
     affinity_option=$(echo "$plan" | sed -n 's/.*cores=\([^:]*\):.*/\1/p')
     assigned_node=$(echo "$plan" | sed -n 's/.*node=\(.*\)/\1/p')
-    
+
     if [[ $DRY_RUN -eq 0 ]]; then
         log "Setting cores, CPU flags, and affinity..."
         qm set "$vmid" -cores "$cpu_count" -cpu "$CPU_CONFIG_STRING" -affinity "$affinity_option"
-        
+
         log "Setting NUMA, Hugepages, and Ballooning..."
         vm_memory=$(qm config "$vmid" | grep '^memory:' | awk '{print $2}')
         numa_cpus_range="0-$((cpu_count - 1))"
         numa0_opts="cpus=${numa_cpus_range},hostnodes=${assigned_node},memory=${vm_memory},policy=bind"
         qm set "$vmid" -numa 1 -numa0 "$numa0_opts" -hugepages 1024 -balloon 0
-        
+
         log "Setting virtio NIC queues..."
         while IFS= read -r line; do
             iface=$(echo "$line" | awk -F': ' '{print $1}'); current_opts=$(echo "$line" | awk -F': ' '{print $2}')
@@ -619,7 +619,7 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
         else
             log "Skipping hook script attachment (not specified)"
         fi
-        
+
         log "Enabling I/O thread on boot disk..."
         boot_disk_device=$(qm config "$vmid" | grep '^boot:' | sed -e 's/.*order=//' -e 's/;.*//' -e 's/(.*)//' || true)
         if [[ -n "$boot_disk_device" ]]; then
