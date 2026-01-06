@@ -493,13 +493,9 @@ In this section, you'll set up a license server that allows your virtual machine
 
 > 📝 **What is a license server?** The license server validates your virtual GPU usage. Without it, your VMs performance will be heavily degraded after 20 minutes of running.
 
-### 5.1 Installing Docker
+### 5.1 Installing Docker (on proxmox host)
 
-**Steps:**
-
-1. Set up a separate machine running Ubuntu 24.04 (or any OS that supports Docker)
-2. Follow the [official Docker installation guide](https://docs.docker.com/engine/install/ubuntu/) for Ubuntu 24.04
-3. Make sure to install Docker Compose as well
+Follow the [official Docker installation guide]([https://docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/debian/)) for Debian
 
 ### 5.2 Creating License Server Directory
 
