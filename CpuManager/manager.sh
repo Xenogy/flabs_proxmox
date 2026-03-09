@@ -44,7 +44,7 @@ STATEEOF
         vm_count=$((vm_count + 1))
         local plan=${VM_ASSIGNMENTS[$vmid]}
         local cpu_count=${VMS_TO_CONFIGURE[$vmid]}
-
+        
         # [FIX] Changed delimiter from ':' to '|' to handle PCI IDs correctly
         local assigned_cores_str=$(echo "$plan" | sed -n 's/.*cores=\([^|]*\).*/\1/p')
         local assigned_node=$(echo "$plan" | sed -n 's/.*node=\([0-9]*\).*/\1/p')
@@ -100,6 +100,28 @@ for cmd in qm lscpu jq bc lspci; do
     if ! command -v "$cmd" &> /dev/null; then error "Required command '$cmd' not found."; fi
 done
 
+# Handle host core pinning reset
+if [[ $RESET_HOST_PINNING -eq 1 ]]; then
+    log "Resetting all host core pinning..."
+    echo ""
+    echo "  # Reset AllowedCPUs on slices"
+    echo "  systemctl set-property system.slice AllowedCPUs=\"\""
+    echo "  systemctl set-property user.slice AllowedCPUs=\"\""
+    echo "  systemctl set-property init.scope AllowedCPUs=\"\""
+    echo ""
+    echo "  # Remove CPUAffinity drop-in for PID 1 (systemd manager)"
+    echo "  rm -f /etc/systemd/system.conf.d/99-host-cores.conf"
+    echo ""
+    echo "  # Remove CPUAffinity drop-in for machine.slice (VMs)"
+    echo "  rm -f /etc/systemd/system/machine.slice.d/99-vm-cores.conf"
+    echo ""
+    echo "  # Reload systemd to apply changes"
+    echo "  systemctl daemon-reexec"
+    echo ""
+    log "Run the above commands manually as root to reset all pinning."
+    exit 0
+fi
+
 
 # =============================================================================
 # --- PHASE 1: TOPOLOGY DISCOVERY (CPU) ---
@@ -139,6 +161,85 @@ while IFS= read -r line; do
 done <<< "$lscpu_output"
 IFS=$'\n' NUMA_NODE_IDS=($(sort -n <<<"${NUMA_NODE_IDS[*]}")); unset IFS
 
+# --- Auto-select host cores function ---
+auto_select_host_cores() {
+    local auto_host_cores=()
+    for node_id in "${NUMA_NODE_IDS[@]}"; do
+        local node_phys_cores=()
+        local node_smt_cores=()
+        for cpu_id in $(seq 0 $SMT_END); do
+            if [[ -v CPU_TO_NODE["$cpu_id"] && "${CPU_TO_NODE[$cpu_id]}" == "$node_id" ]]; then
+                if (( cpu_id >= PHYS_START && cpu_id <= PHYS_END )); then
+                    node_phys_cores+=("$cpu_id")
+                elif (( cpu_id >= SMT_START && cpu_id <= SMT_END )); then
+                    node_smt_cores+=("$cpu_id")
+                fi
+            fi
+        done
+        IFS=$'\n' sorted_phys_cores=($(sort -n <<<"${node_phys_cores[*]}")); unset IFS
+        IFS=$'\n' sorted_smt_cores=($(sort -n <<<"${node_smt_cores[*]}")); unset IFS
+        local phys_cores_added=0
+        for core in "${sorted_phys_cores[@]}"; do
+            if (( phys_cores_added < CORES_PER_NUMA )); then
+                auto_host_cores+=("$core")
+                phys_cores_added=$((phys_cores_added + 1))
+            fi
+        done
+        local smt_cores_added=0
+        for core in "${sorted_smt_cores[@]}"; do
+            if (( smt_cores_added < CORES_PER_NUMA )); then
+                auto_host_cores+=("$core")
+                smt_cores_added=$((smt_cores_added + 1))
+            fi
+        done
+    done
+    local json_cores="["
+    local first=true
+    for core in "${auto_host_cores[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            json_cores+="$core"
+            first=false
+        else
+            json_cores+=",$core"
+        fi
+    done
+    json_cores+="]"
+    echo "$json_cores"
+}
+
+# Handle -a auto-select host cores (after topology discovery)
+if [[ $AUTO_HOST_CORES -eq 1 ]]; then
+    log "Auto-selection requested, overriding config host_cores..."
+    log "Auto-selecting first $CORES_PER_NUMA physical + $CORES_PER_NUMA SMT core(s) per NUMA node for host pinning..."
+    HOST_CORES_JSON=$(auto_select_host_cores)
+    log "Auto-selected host cores: $HOST_CORES_JSON"
+
+    if [[ $DRY_RUN -eq 0 ]]; then
+        cp "$CONFIG_FILE" "${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+        log "  Created backup: ${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+        if jq --argjson host_cores "$HOST_CORES_JSON" '.global_settings.host_cores = $host_cores' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"; then
+            mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+            log "  Updated host_cores in config file: $CONFIG_FILE"
+        else
+            error "Failed to update config file with auto-selected host cores"
+        fi
+    else
+        log "  DRY RUN: Would update host_cores in config file: $CONFIG_FILE"
+    fi
+
+    while IFS= read -r core_id; do
+        if [[ "$core_id" =~ ^[0-9]+$ ]]; then
+            node_id=""
+            for cpu in $(seq 0 $SMT_END); do
+                if [[ -v CPU_TO_NODE["$cpu"] && "$cpu" == "$core_id" ]]; then
+                    node_id=${CPU_TO_NODE["$cpu"]}; break
+                fi
+            done
+            log "  NUMA node $node_id: Selected core $core_id"
+        fi
+    done < <(echo "$HOST_CORES_JSON" | jq -r '.[]')
+fi
+
 if [[ "$RESERVE_HOST_CORES" == "true" ]]; then
     if [[ "$HOST_CORES_JSON" != "[]" && "$HOST_CORES_JSON" != "null" ]]; then
         while IFS= read -r core_id; do
@@ -153,6 +254,77 @@ if [[ "$RESERVE_HOST_CORES" == "true" ]]; then
                 fi
             done
         done
+    fi
+
+    # Apply/output host core pinning
+    if [[ ${#CORES_TO_RESERVE[@]} -gt 0 ]]; then
+        host_cores_string=$(IFS=' '; echo "${CORES_TO_RESERVE[*]}")
+
+        # Build the inverse set (all non-reserved cores) for machine.slice
+        vm_cores_list=()
+        for cpu_id in $(seq 0 $SMT_END); do
+            if [[ ! -v CORES_TO_RESERVE_MAP["$cpu_id"] ]]; then
+                vm_cores_list+=("$cpu_id")
+            fi
+        done
+        vm_cores_string=$(IFS=' '; echo "${vm_cores_list[*]}")
+
+        if [[ $DRY_RUN -eq 0 ]]; then
+            log "Applying host core pinning..."
+
+            # 1. AllowedCPUs via systemctl set-property
+            log "  Setting AllowedCPUs on system.slice, user.slice, init.scope..."
+            systemctl set-property system.slice AllowedCPUs="$host_cores_string"
+            systemctl set-property user.slice AllowedCPUs="$host_cores_string"
+            systemctl set-property init.scope AllowedCPUs="$host_cores_string"
+
+            # 2. CPUAffinity drop-in for PID 1 (systemd manager)
+            log "  Writing /etc/systemd/system.conf.d/99-host-cores.conf..."
+            mkdir -p /etc/systemd/system.conf.d
+            cat > /etc/systemd/system.conf.d/99-host-cores.conf << EOF
+[Manager]
+CPUAffinity=$host_cores_string
+EOF
+
+            # 3. CPUAffinity drop-in for machine.slice (pin VMs to non-host cores)
+            log "  Writing /etc/systemd/system/machine.slice.d/99-vm-cores.conf..."
+            mkdir -p /etc/systemd/system/machine.slice.d
+            cat > /etc/systemd/system/machine.slice.d/99-vm-cores.conf << EOF
+[Slice]
+CPUAffinity=$vm_cores_string
+EOF
+
+            # 4. Reload systemd to pick up the drop-in files
+            log "  Reloading systemd (daemon-reexec)..."
+            systemctl daemon-reexec
+
+            log "Host core pinning applied successfully."
+        else
+            log "[DRY RUN] Host core pinning commands:"
+            echo ""
+            echo "  # AllowedCPUs on slices"
+            echo "  systemctl set-property system.slice AllowedCPUs=\"$host_cores_string\""
+            echo "  systemctl set-property user.slice AllowedCPUs=\"$host_cores_string\""
+            echo "  systemctl set-property init.scope AllowedCPUs=\"$host_cores_string\""
+            echo ""
+            echo "  # CPUAffinity drop-in for PID 1 (systemd manager)"
+            echo "  mkdir -p /etc/systemd/system.conf.d"
+            echo "  cat > /etc/systemd/system.conf.d/99-host-cores.conf << EOF"
+            echo "  [Manager]"
+            echo "  CPUAffinity=$host_cores_string"
+            echo "  EOF"
+            echo ""
+            echo "  # CPUAffinity drop-in for machine.slice (pin VMs to non-host cores)"
+            echo "  mkdir -p /etc/systemd/system/machine.slice.d"
+            echo "  cat > /etc/systemd/system/machine.slice.d/99-vm-cores.conf << EOF"
+            echo "  [Slice]"
+            echo "  CPUAffinity=$vm_cores_string"
+            echo "  EOF"
+            echo ""
+            echo "  # Reload systemd"
+            echo "  systemctl daemon-reexec"
+            echo ""
+        fi
     fi
 fi
 
@@ -189,7 +361,7 @@ discover_gpus() {
 
     while read -r line; do
         pci_slot=$(echo "$line" | cut -d ' ' -f 1)
-
+        
         local numa_path="/sys/bus/pci/devices/${pci_slot}/numa_node"
         local numa_node="0"
         if [[ -f "$numa_path" ]]; then
@@ -200,7 +372,7 @@ discover_gpus() {
         local mdev_base="/sys/bus/pci/devices/${pci_slot}/mdev_supported_types"
         local selected_type=""
         local available_instances=0
-
+        
         if [[ -d "$mdev_base" ]]; then
             if [[ "$auto_detect" == "true" ]]; then
                 for type_dir in $(ls -1v "$mdev_base"); do
@@ -297,14 +469,14 @@ assign_resources() {
     local gpu_pci=$3
     local gpu_mdev=$4
     local cpu_count=${VMS_TO_CONFIGURE[$vmid]}
-
+    
     local target_node=$forced_node
     local avail_phys=(${AVAILABLE_PHYS_CORES["$target_node"]:-})
     local avail_smt=(${AVAILABLE_SMT_CORES["$target_node"]:-})
-
+    
     local phys_needed=$cpu_count
     local smt_needed=0
-
+    
     if [[ "$USE_SMT_CORES" == true ]]; then
         phys_needed=$(echo "$cpu_count * $PHYSICAL_CORE_RATIO / 1" | bc)
         if (( phys_needed > ${#avail_phys[@]} )); then phys_needed=${#avail_phys[@]}; fi
@@ -316,14 +488,14 @@ assign_resources() {
     fi
 
     local assigned_cores=( "${avail_phys[@]:0:$phys_needed}" "${avail_smt[@]:0:$smt_needed}" )
-
+    
     # [FIX] Changed delimiter from ':' to '|' to handle PCI IDs correctly
     local plan="cores=$(IFS=,; echo "${assigned_cores[*]}")|node=${target_node}"
     if [[ -n "$gpu_pci" ]]; then plan="$plan|gpu_pci=${gpu_pci}|mdev=${gpu_mdev}"; fi
-
+    
     VM_ASSIGNMENTS["$vmid"]="$plan"
     CORES_ASSIGNED_PER_NODE["$target_node"]=$(( ${CORES_ASSIGNED_PER_NODE[$target_node]} + cpu_count ))
-
+    
     for core in "${assigned_cores[@]}"; do
         AVAILABLE_PHYS_CORES["$target_node"]=$(echo "${AVAILABLE_PHYS_CORES[$target_node]}" | sed "s/\b${core}\b\s*//g")
         AVAILABLE_SMT_CORES["$target_node"]=$(echo "${AVAILABLE_SMT_CORES[$target_node]}" | sed "s/\b${core}\b\s*//g")
@@ -340,12 +512,12 @@ for vmid in $sorted_vmids; do
     for pci in "${GPU_PCI_IDS[@]}"; do
         if [[ ${GPU_SLOTS_FREE[$pci]} -gt 0 ]]; then
             node=${GPU_MAP[$pci]}
-
+            
             # Count free cores on this node (Global Vars used, NO LOCAL)
             avail_phys_list=(${AVAILABLE_PHYS_CORES["$node"]:-})
             avail_smt_list=(${AVAILABLE_SMT_CORES["$node"]:-})
             total_avail=$(( ${#avail_phys_list[@]} + ${#avail_smt_list[@]} ))
-
+            
             if (( cpu_count <= total_avail )); then
                 # Load Balancing: Pick the node with the MOST free cores
                 if (( total_avail > max_free_cores )); then
@@ -383,7 +555,7 @@ if [[ $DRY_RUN -eq 1 ]]; then warn "*** DRY RUN MODE ***"; fi
 for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
     log "--- Configuring VM $vmid ---"
     plan=${VM_ASSIGNMENTS[$vmid]}
-
+    
     # [FIX] Updated sed delimiters to match new plan format '|'
     affinity=$(echo "$plan" | sed -n 's/.*cores=\([^|]*\).*/\1/p')
     node=$(echo "$plan" | sed -n 's/.*node=\([0-9]*\).*/\1/p')
@@ -402,7 +574,7 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
         else
             error "Fatal: VM $vmid should have a GPU but plan is missing it."
         fi
-
+        
         while read -r line; do
              iface=$(echo "$line" | cut -d: -f1)
              qm set "$vmid" -"$iface" "$(echo "$line" | cut -d' ' -f2 | sed -E 's/,?queues=[0-9]+//g'),queues=$cpu_count"
