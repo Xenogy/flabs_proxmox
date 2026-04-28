@@ -7,7 +7,7 @@ warn() { echo "[WARN] $@" >&2; }
 error() { echo "[ERROR] $@" >&2; exit 1; }
 
 usage() {
-    echo "Usage: $0 -f <config.json> [-n] [-s <hook_script_path>] [-r] [-a [N]]"
+    echo "Usage: $0 -f <config.json> [-n][-s <hook_script_path>] [-r] [-a [N]]"
     echo "  -f <config.json>:      Path to the JSON configuration file. Required."
     echo "  -n:                    Dry run mode. Plan changes but do not execute them. Optional."
     echo "  -s <hook_script_path>: Path to hook script for VM isolation. Optional."
@@ -44,7 +44,7 @@ STATEEOF
         vm_count=$((vm_count + 1))
         local plan=${VM_ASSIGNMENTS[$vmid]}
         local cpu_count=${VMS_TO_CONFIGURE[$vmid]}
-        
+
         # [FIX] Changed delimiter from ':' to '|' to handle PCI IDs correctly
         local assigned_cores_str=$(echo "$plan" | sed -n 's/.*cores=\([^|]*\).*/\1/p')
         local assigned_node=$(echo "$plan" | sed -n 's/.*node=\([0-9]*\).*/\1/p')
@@ -59,7 +59,7 @@ STATEEOF
       "cores": $cpu_count,
       "numa_node": $assigned_node,
       "gpu_assigned": $([ -n "$gpu_info" ] && echo "\"$gpu_info ($mdev_info)\"" || echo "null"),
-      "assigned_physical_cores": [$(IFS=','; echo "${assigned_cores_array[*]}")]
+      "assigned_physical_cores":[$(IFS=','; echo "${assigned_cores_array[*]}")]
     }$([ $vm_count -lt $total_vms ] && echo "," || echo "")
 VMSTATEEOF
     done
@@ -129,7 +129,7 @@ fi
 log "--- PHASE 1: Discovering CPU Topology ---"
 
 CPU_CONFIG_STRING=$(jq -r '.global_settings.cpu_config_string // "host"' "$CONFIG_FILE")
-HOST_CORES_JSON=$(jq -r '.global_settings.host_cores // []' "$CONFIG_FILE")
+HOST_CORES_JSON=$(jq -r '.global_settings.host_cores //[]' "$CONFIG_FILE")
 RESERVE_HOST_CORES=$(jq -r '.global_settings.reserve_host_cores' "$CONFIG_FILE")
 
 unique_cores=($(lscpu -p=CPU,CORE,SOCKET,NODE | grep -v '^#' | awk -F',' '{print $2}' | sort -n | uniq))
@@ -161,38 +161,46 @@ while IFS= read -r line; do
 done <<< "$lscpu_output"
 IFS=$'\n' NUMA_NODE_IDS=($(sort -n <<<"${NUMA_NODE_IDS[*]}")); unset IFS
 
-# --- Auto-select host cores function ---
+# --- Auto-select host cores function (CONSOLIDATED TO ONE NODE) ---
 auto_select_host_cores() {
+    local total_phys_to_reserve=$1
+    local target_node=$2
     local auto_host_cores=()
-    for node_id in "${NUMA_NODE_IDS[@]}"; do
-        local node_phys_cores=()
-        local node_smt_cores=()
-        for cpu_id in $(seq 0 $SMT_END); do
-            if [[ -v CPU_TO_NODE["$cpu_id"] && "${CPU_TO_NODE[$cpu_id]}" == "$node_id" ]]; then
-                if (( cpu_id >= PHYS_START && cpu_id <= PHYS_END )); then
-                    node_phys_cores+=("$cpu_id")
-                elif (( cpu_id >= SMT_START && cpu_id <= SMT_END )); then
-                    node_smt_cores+=("$cpu_id")
-                fi
+
+    local node_phys_cores=()
+    local node_smt_cores=()
+
+    # Only scan the target node for available cores
+    for cpu_id in $(seq 0 $SMT_END); do
+        if [[ -v CPU_TO_NODE["$cpu_id"] && "${CPU_TO_NODE[$cpu_id]}" == "$target_node" ]]; then
+            if (( cpu_id >= PHYS_START && cpu_id <= PHYS_END )); then
+                node_phys_cores+=("$cpu_id")
+            elif (( cpu_id >= SMT_START && cpu_id <= SMT_END )); then
+                node_smt_cores+=("$cpu_id")
             fi
-        done
-        IFS=$'\n' sorted_phys_cores=($(sort -n <<<"${node_phys_cores[*]}")); unset IFS
-        IFS=$'\n' sorted_smt_cores=($(sort -n <<<"${node_smt_cores[*]}")); unset IFS
-        local phys_cores_added=0
-        for core in "${sorted_phys_cores[@]}"; do
-            if (( phys_cores_added < CORES_PER_NUMA )); then
-                auto_host_cores+=("$core")
-                phys_cores_added=$((phys_cores_added + 1))
-            fi
-        done
-        local smt_cores_added=0
-        for core in "${sorted_smt_cores[@]}"; do
-            if (( smt_cores_added < CORES_PER_NUMA )); then
-                auto_host_cores+=("$core")
-                smt_cores_added=$((smt_cores_added + 1))
-            fi
-        done
+        fi
     done
+
+    IFS=$'\n' sorted_phys_cores=($(sort -n <<<"${node_phys_cores[*]}")); unset IFS
+    IFS=$'\n' sorted_smt_cores=($(sort -n <<<"${node_smt_cores[*]}")); unset IFS
+
+    local phys_cores_added=0
+    for core in "${sorted_phys_cores[@]}"; do
+        if (( phys_cores_added < total_phys_to_reserve )); then
+            auto_host_cores+=("$core")
+            phys_cores_added=$((phys_cores_added + 1))
+        fi
+    done
+
+    local smt_cores_added=0
+    for core in "${sorted_smt_cores[@]}"; do
+        if (( smt_cores_added < total_phys_to_reserve )); then
+            auto_host_cores+=("$core")
+            smt_cores_added=$((smt_cores_added + 1))
+        fi
+    done
+
+    # Format into JSON array
     local json_cores="["
     local first=true
     for core in "${auto_host_cores[@]}"; do
@@ -210,8 +218,16 @@ auto_select_host_cores() {
 # Handle -a auto-select host cores (after topology discovery)
 if [[ $AUTO_HOST_CORES -eq 1 ]]; then
     log "Auto-selection requested, overriding config host_cores..."
-    log "Auto-selecting first $CORES_PER_NUMA physical + $CORES_PER_NUMA SMT core(s) per NUMA node for host pinning..."
-    HOST_CORES_JSON=$(auto_select_host_cores)
+
+    # Pick the highest NUMA node ID available (usually Node 1)
+    TARGET_NODE=${NUMA_NODE_IDS[-1]}
+
+    # Calculate total physical cores to reserve (e.g., -a 2 on a 2-node system = 4 total physical)
+    TOTAL_PHYS_TO_RESERVE=$(( CORES_PER_NUMA * ${#NUMA_NODE_IDS[@]} ))
+
+    log "Consolidating host cores: Auto-selecting $TOTAL_PHYS_TO_RESERVE physical + $TOTAL_PHYS_TO_RESERVE SMT core(s) strictly on NUMA Node $TARGET_NODE..."
+
+    HOST_CORES_JSON=$(auto_select_host_cores "$TOTAL_PHYS_TO_RESERVE" "$TARGET_NODE")
     log "Auto-selected host cores: $HOST_CORES_JSON"
 
     if [[ $DRY_RUN -eq 0 ]]; then
@@ -361,7 +377,7 @@ discover_gpus() {
 
     while read -r line; do
         pci_slot=$(echo "$line" | cut -d ' ' -f 1)
-        
+
         local numa_path="/sys/bus/pci/devices/${pci_slot}/numa_node"
         local numa_node="0"
         if [[ -f "$numa_path" ]]; then
@@ -372,7 +388,7 @@ discover_gpus() {
         local mdev_base="/sys/bus/pci/devices/${pci_slot}/mdev_supported_types"
         local selected_type=""
         local available_instances=0
-        
+
         if [[ -d "$mdev_base" ]]; then
             if [[ "$auto_detect" == "true" ]]; then
                 for type_dir in $(ls -1v "$mdev_base"); do
@@ -469,14 +485,14 @@ assign_resources() {
     local gpu_pci=$3
     local gpu_mdev=$4
     local cpu_count=${VMS_TO_CONFIGURE[$vmid]}
-    
+
     local target_node=$forced_node
     local avail_phys=(${AVAILABLE_PHYS_CORES["$target_node"]:-})
     local avail_smt=(${AVAILABLE_SMT_CORES["$target_node"]:-})
-    
+
     local phys_needed=$cpu_count
     local smt_needed=0
-    
+
     if [[ "$USE_SMT_CORES" == true ]]; then
         phys_needed=$(echo "$cpu_count * $PHYSICAL_CORE_RATIO / 1" | bc)
         if (( phys_needed > ${#avail_phys[@]} )); then phys_needed=${#avail_phys[@]}; fi
@@ -488,14 +504,14 @@ assign_resources() {
     fi
 
     local assigned_cores=( "${avail_phys[@]:0:$phys_needed}" "${avail_smt[@]:0:$smt_needed}" )
-    
+
     # [FIX] Changed delimiter from ':' to '|' to handle PCI IDs correctly
     local plan="cores=$(IFS=,; echo "${assigned_cores[*]}")|node=${target_node}"
     if [[ -n "$gpu_pci" ]]; then plan="$plan|gpu_pci=${gpu_pci}|mdev=${gpu_mdev}"; fi
-    
+
     VM_ASSIGNMENTS["$vmid"]="$plan"
     CORES_ASSIGNED_PER_NODE["$target_node"]=$(( ${CORES_ASSIGNED_PER_NODE[$target_node]} + cpu_count ))
-    
+
     for core in "${assigned_cores[@]}"; do
         AVAILABLE_PHYS_CORES["$target_node"]=$(echo "${AVAILABLE_PHYS_CORES[$target_node]}" | sed "s/\b${core}\b\s*//g")
         AVAILABLE_SMT_CORES["$target_node"]=$(echo "${AVAILABLE_SMT_CORES[$target_node]}" | sed "s/\b${core}\b\s*//g")
@@ -512,12 +528,12 @@ for vmid in $sorted_vmids; do
     for pci in "${GPU_PCI_IDS[@]}"; do
         if [[ ${GPU_SLOTS_FREE[$pci]} -gt 0 ]]; then
             node=${GPU_MAP[$pci]}
-            
+
             # Count free cores on this node (Global Vars used, NO LOCAL)
             avail_phys_list=(${AVAILABLE_PHYS_CORES["$node"]:-})
             avail_smt_list=(${AVAILABLE_SMT_CORES["$node"]:-})
             total_avail=$(( ${#avail_phys_list[@]} + ${#avail_smt_list[@]} ))
-            
+
             if (( cpu_count <= total_avail )); then
                 # Load Balancing: Pick the node with the MOST free cores
                 if (( total_avail > max_free_cores )); then
@@ -555,7 +571,7 @@ if [[ $DRY_RUN -eq 1 ]]; then warn "*** DRY RUN MODE ***"; fi
 for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
     log "--- Configuring VM $vmid ---"
     plan=${VM_ASSIGNMENTS[$vmid]}
-    
+
     # [FIX] Updated sed delimiters to match new plan format '|'
     affinity=$(echo "$plan" | sed -n 's/.*cores=\([^|]*\).*/\1/p')
     node=$(echo "$plan" | sed -n 's/.*node=\([0-9]*\).*/\1/p')
@@ -574,7 +590,7 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
         else
             error "Fatal: VM $vmid should have a GPU but plan is missing it."
         fi
-        
+
         while read -r line; do
              iface=$(echo "$line" | cut -d: -f1)
              qm set "$vmid" -"$iface" "$(echo "$line" | cut -d' ' -f2 | sed -E 's/,?queues=[0-9]+//g'),queues=$cpu_count"
@@ -598,7 +614,7 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
         if [[ -n "$HOOK_SCRIPT_PATH" ]]; then qm set "$vmid" --hookscript "$HOOK_SCRIPT_PATH"; fi
     else
         log "  [DRY RUN] Set Affinity: $affinity (Node $node)"
-        [[ -n "$gpu_pci" ]] && log "  [DRY RUN] Set GPU: $gpu_pci ($gpu_mdev)"
+        [[ -n "$gpu_pci" ]] && log "[DRY RUN] Set GPU: $gpu_pci ($gpu_mdev)"
     fi
 done
 
