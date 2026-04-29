@@ -13,6 +13,7 @@ usage() {
     echo "  -s <hook_script_path>: Path to hook script for VM isolation. Optional."
     echo "  -r:                    Show commands to reset host core pinning. Optional."
     echo "  -a [N]:                Auto-select host cores. Optional."
+    echo "  -g:                    Skip GPU discovery and assignment. Optional."
     exit 1
 }
 
@@ -77,6 +78,7 @@ HOOK_SCRIPT_PATH=""
 RESET_HOST_PINNING=0
 AUTO_HOST_CORES=0
 CORES_PER_NUMA=1
+SKIP_GPU=0
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -88,6 +90,7 @@ while [[ $# -gt 0 ]]; do
             AUTO_HOST_CORES=1
             if [[ $# -gt 1 && "$2" =~ ^[0-9]+$ ]]; then CORES_PER_NUMA="$2"; shift 2; else shift; fi
             ;;
+        -g|--no-gpu) SKIP_GPU=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) error "Unknown option: $1" ;;
     esac
@@ -368,12 +371,33 @@ log "--- PHASE 1.5: Discovering GPUs and MDEV Capacities ---"
 declare -A GPU_MAP GPU_MDEV_PROFILE GPU_SLOTS_FREE
 declare -a GPU_PCI_IDS
 
+if [[ $SKIP_GPU -eq 1 ]]; then
+    log "  GPU assignment skipped (-g flag set)."
+fi
+
 discover_gpus() {
+    if [[ $SKIP_GPU -eq 1 ]]; then return; fi
     local target_vram=$(jq -r '.gpu_settings.required_vram_mb // 2048' "$CONFIG_FILE")
     local auto_detect=$(jq -r 'if .gpu_settings.auto_detect_profile == false then "false" else "true" end' "$CONFIG_FILE")
     local manual_mdev=$(jq -r '.gpu_settings.mdev_override // "nvidia-47"' "$CONFIG_FILE")
 
     log "  GPU Strategy: VRAM=${target_vram}MB, AutoDetect=${auto_detect}"
+
+    # Build lspci input: use gpu_pci_ids override if provided, otherwise auto-detect
+    local pci_override_count
+    pci_override_count=$(jq -r '(.gpu_settings.gpu_pci_ids // []) | length' "$CONFIG_FILE")
+
+    local lspci_input
+    if (( pci_override_count > 0 )); then
+        log "  Using config gpu_pci_ids override ($pci_override_count GPU(s) specified)"
+        # Fake lspci lines: just the PCI slot — the loop only uses field 1
+        lspci_input=$(jq -r '(.gpu_settings.gpu_pci_ids // [])[]' "$CONFIG_FILE")
+    else
+        lspci_input=$(lspci -D -nn | grep -E "\[03[0-9a-fA-F]{2}\]" | grep -i nvidia)
+        if [[ -z "$lspci_input" ]]; then
+            warn "  No NVIDIA display-class devices found via lspci. Check lspci output or set gpu_settings.gpu_pci_ids in config."
+        fi
+    fi
 
     while read -r line; do
         pci_slot=$(echo "$line" | cut -d ' ' -f 1)
@@ -441,7 +465,7 @@ discover_gpus() {
             fi
         fi
 
-    done < <(lspci -D -nn | grep -E "\[03(00|02)\]" | grep -i nvidia)
+    done < <(echo "$lspci_input")
 }
 
 discover_gpus
@@ -458,7 +482,7 @@ for vmid in $(jq -r '.vms | keys[]' "$CONFIG_FILE"); do
     cores=$(jq -r --arg vmid "$vmid" '.vms[$vmid]' "$CONFIG_FILE")
     VMS_TO_CONFIGURE["$vmid"]="$cores"
     TOTAL_CORES_REQUESTED=$((TOTAL_CORES_REQUESTED + cores))
-    log "  VM $vmid: $cores cores [GPU REQUIRED]"
+    log "  VM $vmid: $cores cores$([ $SKIP_GPU -eq 1 ] && echo '' || echo ' [GPU REQUIRED]')"
 done
 
 
@@ -545,7 +569,25 @@ for vmid in $sorted_vmids; do
     done
 
     # 2. ASSIGN if candidate found
-    if [[ -n "$best_pci" ]]; then
+    if [[ $SKIP_GPU -eq 1 ]]; then
+        # No GPU — pick the least-loaded NUMA node
+        best_node=""
+        max_free_cores=-1
+        for node_id in "${NUMA_NODE_IDS[@]}"; do
+            avail_phys_list=(${AVAILABLE_PHYS_CORES["$node_id"]:-})
+            avail_smt_list=(${AVAILABLE_SMT_CORES["$node_id"]:-})
+            total_avail=$(( ${#avail_phys_list[@]} + ${#avail_smt_list[@]} ))
+            if (( cpu_count <= total_avail && total_avail > max_free_cores )); then
+                max_free_cores=$total_avail
+                best_node=$node_id
+            fi
+        done
+        if [[ -z "$best_node" ]]; then
+            error "VM $vmid: no NUMA node has enough free cores!"
+        fi
+        log "  Assigning VM $vmid to Node $best_node (no GPU, Node Free: $max_free_cores)"
+        assign_resources "$vmid" "$best_node" "" ""
+    elif [[ -n "$best_pci" ]]; then
         pci=$best_pci
         node=${GPU_MAP[$pci]}
         mdev=${GPU_MDEV_PROFILE[$pci]}
@@ -584,11 +626,13 @@ for vmid in "${!VMS_TO_CONFIGURE[@]}"; do
         vm_mem=$(qm config "$vmid" | grep '^memory:' | awk '{print $2}')
         qm set "$vmid" -numa 1 -numa0 "cpus=0-$((cpu_count-1)),hostnodes=$node,memory=$vm_mem,policy=bind" -hugepages 1024 -balloon 0
 
-        if [[ -n "$gpu_pci" && -n "$gpu_mdev" ]]; then
-            log "  Attaching GPU: $gpu_pci ($gpu_mdev)"
-            qm set "$vmid" -hostpci0 "${gpu_pci},mdev=${gpu_mdev},pcie=1,x-vga=1"
-        else
-            error "Fatal: VM $vmid should have a GPU but plan is missing it."
+        if [[ $SKIP_GPU -eq 0 ]]; then
+            if [[ -n "$gpu_pci" && -n "$gpu_mdev" ]]; then
+                log "  Attaching GPU: $gpu_pci ($gpu_mdev)"
+                qm set "$vmid" -hostpci0 "${gpu_pci},mdev=${gpu_mdev},pcie=1,x-vga=1"
+            else
+                error "Fatal: VM $vmid should have a GPU but plan is missing it."
+            fi
         fi
 
         while read -r line; do
