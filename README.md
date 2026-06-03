@@ -408,7 +408,7 @@ Follow these steps to create a new VM in Proxmox:
 
    ![VM Setup - CPU Tab](./imgs/vm_setup-5-CPU.png)
 
-   > 📝 **Note:** CPU configuration varies significantly between systems. If you plan to use the CPU affinity script provided in Section 7, you can use default settings here.
+   > 📝 **Note:** CPU configuration varies significantly between systems. If you plan to use the CPU affinity script covered in Section 7, you can use default settings here.
 
 6. **Memory Settings**
    - Set Memory (recommended: 8-16 GB)
@@ -685,34 +685,37 @@ This optional section helps optimize VM performance by configuring CPU pinning a
 
 ### 7.1 Using the CPU Affinity Script
 
-The included [cpu_affinity.sh](./cpu_affinity.sh) script helps optimize VM performance by:
+The CPU affinity tooling now lives in its own repository: [Xenogy/affinity-manager](https://github.com/Xenogy/affinity-manager). It's a Bash script (`manager.sh`) for Proxmox that helps optimize VM performance by:
 - Balancing CPU pinning and NUMA node assignment
-- Reserving the first physical core of each socket for the host
-- Configuring 1GB hugepages
-- Disabling memory ballooning
-- Setting the number of VirtIO queues to match vCPU count
+- Reserving host cores so the hypervisor stays responsive
+- Assigning NVIDIA vGPU slots to your VMs
+- Applying the settings to each VM via `qm`
 
 **Steps:**
 
-1. On your Proxmox host, view the script's help information:
+1. On your Proxmox host, clone the repository:
    ```bash
-   bash cpu_affinity.sh -h
+   git clone https://github.com/Xenogy/affinity-manager.git
+   cd affinity-manager
    ```
 
-2. Run the script with your desired configuration:
+2. Edit `config.json` to match your setup — the VM IDs and how many cores each should get, the host cores to reserve, and your vGPU profile.
+
+3. Preview the changes without applying them (dry run):
    ```bash
-   bash cpu_affinity.sh -r VM_ID -c NUMBER_OF_CORES
+   ./manager.sh -f config.json -n
    ```
 
-   Replace:
-   - `VM_ID` with your VM's ID number (can be a range like '100-105' or a list like '100,102,105')
-   - `NUMBER_OF_CORES` with the number of cores you want to assign
+4. Apply the configuration (requires root):
+   ```bash
+   sudo ./manager.sh -f config.json
+   ```
 
-   > 💡 **Tip:** You can use the `-n` flag for a dry run to see what changes would be made without actually applying them.
+   > 💡 **Tip:** Run `./manager.sh -h` to see all available options (e.g. `-a`/`-b` to auto-select host cores, `-g` for CPU-only mode). See the [affinity-manager README](https://github.com/Xenogy/affinity-manager#readme) for the full configuration reference.
 
-   > ⚠️ **Important:** The script is applied once. If you change your number of running VMs, you must reapply with the new configuration.
+   > ⚠️ **Important:** The settings are applied once. If you change your number of running VMs, update `config.json` and reapply.
 
-3. Restart your VM to apply the changes
+5. Restart your VM to apply the changes
 
 **Verification:**
 After applying the CPU affinity settings, you should notice improved performance, especially under heavy load.
